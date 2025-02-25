@@ -601,15 +601,15 @@
       "address": "0x169B2a4Fb47373aDBf82413AB666a80cA507aEDF",
       "transactionHash": "0x6d40b9608abf01e539c0fe45a8855745e67e5a7dab7ceecdfcd988fd0015d907"
     },
-    "1740489087082": {
+    "1740492450639": {
       "events": {},
       "links": {},
-      "address": "0x0Ae058a72FcB69a8b786a257958E9931e451eFb4",
-      "transactionHash": "0x50aa79b69255942184d8272e8e7289c369f58f0c41a6a56cc5a37a59a61aa5a1"
+      "address": "0xeE466b70E4fBbe6cAcBaD0C268edeB6b80f6e6F2",
+      "transactionHash": "0x3507903ff2b2d98f23855012dd3508ac6d701fe0b82c5eed6d2c9d695d2b78c4"
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-02-25T13:12:46.222Z",
+  "updatedAt": "2025-02-25T14:13:14.441Z",
   "networkType": "ethereum",
   "devdoc": {
     "kind": "dev",
