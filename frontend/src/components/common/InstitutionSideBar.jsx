@@ -8,7 +8,8 @@ import {
   FileCheck, 
   History,
   Settings, 
-  UserCircle 
+  UserCircle,
+  Activity 
 } from 'lucide-react';
 
 const InstitutionSidebar = () => {
@@ -20,6 +21,7 @@ const InstitutionSidebar = () => {
     { name: 'Verification Document', icon: History, path: '/institution/verification' },
     { name: 'Clients', icon: Users, path: '/institution/clients' },
     { name: 'Settings', icon: Settings, path: '/institution/settings' },
+    { name: 'Blockchain Status', icon: Activity, path: '/institution/blockchain-status' },
   ];
 
   const stats = [

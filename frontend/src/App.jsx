@@ -15,7 +15,9 @@ import VerificationDocument from './pages/Institution/verification/VerificationD
 import VerificationHistory from './pages/Institution/verification/VerificationHistory';
 import Clients from './pages/Institution/Clients';
 import VerifiedDocument from './pages/Institution/verification/VerifiedDocument';
-
+import StatusPage from './pages/verification/StatusPage';
+import VerificationPage from './pages/verification/VerificationPage';
+import TestUpload from './TestUpload'; 
 
 function App() {
   return (
@@ -34,6 +36,9 @@ function App() {
           <Route path="settings" element={<ClientSettings />} />
         </Route>
 
+         {/* Test route - for development only */}
+        <Route path="/test-upload" element={<TestUpload />} />
+
         {/* Institution Routes */}
         <Route path="/institution" element={<InstitutionLayout />}>
           <Route path="dashboard" element={<InstitutionDashboard />} />
@@ -43,6 +48,8 @@ function App() {
           <Route path="Verified" element={<VerifiedDocument />} />
           <Route path="settings" element={<InstitutionSettings />} />
           <Route path="clients" element={<Clients />} />
+          <Route path="verification/:id" element={<VerificationPage />} />
+          <Route path="blockchain-status" element={<StatusPage />} />
         </Route>
 
         {/* Redirect root to login */}
