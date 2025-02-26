@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu } from '@headlessui/react';
 import { Bell, User, LogOut, Menu as MenuIcon } from 'lucide-react';
+import logo from '../../assets/images/logo.svg';
 
 const Header = ({ toggleSidebar }) => {
   const navigate = useNavigate();
@@ -32,8 +33,8 @@ const Header = ({ toggleSidebar }) => {
             
             <div className="flex-shrink-0 flex items-center ml-4">
               <img
-                className="h-8 w-auto"
-                src="/VeriMask-logo.svg"
+                className="h-12 w-auto"
+                src={logo}
                 alt="VeriMask Logo"
               />
               <span className="ml-2 text-xl font-semibold text-gray-900">VeriMask</span>
@@ -138,6 +139,11 @@ const Header = ({ toggleSidebar }) => {
                 </div>
               </Menu.Items>
             </Menu>
+
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-700">Wallet Connected</p>
+              <p className="text-xs text-gray-500 truncate">0x1234...5678</p>
+            </div>
           </div>
         </div>
       </div>

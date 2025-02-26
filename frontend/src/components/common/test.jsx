@@ -32,7 +32,7 @@ const InstitutionSidebar = () => {
       <div className="flex h-full flex-col">
         <div className="flex-1 overflow-y-auto py-4">
 
-          <nav className="mt-20 px-2">
+          <nav className="mt-5 px-2">
             {navItems.map((item) => (
               <NavLink
                 key={item.name}

@@ -1,4 +1,3 @@
-// src/pages/client/Dashboard.jsx
 import React, { useState } from 'react';
 import { FileText, Upload, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';

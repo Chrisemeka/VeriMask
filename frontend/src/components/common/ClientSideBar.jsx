@@ -15,7 +15,7 @@ const ClientSidebar = () => {
     <div className="h-full w-64 bg-white shadow-lg">
       <div className="flex h-full flex-col">
         <div className="flex-1 overflow-y-auto py-4">
-          <nav className="mt-5 px-2">
+          <nav className="mt-20 px-2">
             {navItems.map((item) => (
               <NavLink
                 key={item.name}
@@ -38,14 +38,14 @@ const ClientSidebar = () => {
           </nav>
         </div>
 
-        <div className="border-t border-gray-200 p-4">
+        {/* <div className="border-t border-gray-200 p-4">
           <div className="flex items-center">
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-700">Wallet Connected</p>
               <p className="text-xs text-gray-500 truncate">0x1234...5678</p>
             </div>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );

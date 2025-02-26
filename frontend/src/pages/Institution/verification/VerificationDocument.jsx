@@ -66,13 +66,13 @@ const VerificationDocument = () => {
         {/* Header */}
         <div className="flex justify-between items-start mb-6">
           <div>
-            <button
+            {/* <button
               onClick={() => navigate(-1)}
               className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
             >
               <ArrowLeft className="h-5 w-5 mr-2" />
               Back to Verifications
-            </button>
+            </button> */}
             <h1 className="text-2xl font-semibold text-gray-900">Document Verification</h1>
             <p className="mt-2 text-sm text-gray-600">Review and verify the submitted document</p>
           </div>
