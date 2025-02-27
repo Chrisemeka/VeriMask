@@ -1,5 +1,7 @@
-import { BrowserRouter,Routes, Route } from 'react-router-dom';
+// Updated App.jsx with WalletProvider
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { WalletProvider } from './contexts/WalletContext';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ClientLayout from './pages/layout/ClientLayout';
@@ -16,47 +18,51 @@ import VerificationHistory from './pages/Institution/verification/VerificationHi
 import Clients from './pages/Institution/Clients';
 import VerifiedDocument from './pages/Institution/verification/VerifiedDocument';
 import StatusPage from './pages/verification/StatusPage';
-import VerificationPage from './pages/verification/VerificationPage';
-import TestUpload from './TestUpload'; 
+import AddVerifier from './pages/Institution/verification/AddVerifier';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" />
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        
-        {/* Client Routes */}
-        <Route path="/client" element={<ClientLayout />}>
-          <Route path="dashboard" element={<ClientDashboard />} />
-          <Route path="documents" element={<ClientDocument />} />
-          <Route path="profile" element={<ClientProfile />} />
-          <Route path="settings" element={<ClientSettings />} />
-        </Route>
+    <WalletProvider>
+      <BrowserRouter>
+        <Toaster position="top-right" />
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          {/* Client Routes */}
+          <Route path="/client" element={<ClientLayout />}>
+            <Route path="dashboard" element={<ClientDashboard />} />
+            <Route path="documents" element={<ClientDocument />} />
+            <Route path="profile" element={<ClientProfile />} />
+            <Route path="settings" element={<ClientSettings />} />
+          </Route>
 
-         {/* Test route - for development only */}
-        <Route path="/test-upload" element={<TestUpload />} />
+          {/* Institution Routes */}
+          <Route path="/institution" element={<InstitutionLayout />}>
+            <Route path="dashboard" element={<InstitutionDashboard />} />
+            <Route path="pending" element={<PendingVerification />} />
+            <Route path="verification" element={<VerificationDocument />} />
+            <Route path="verification/:id" element={<VerificationDocument />} />
+            <Route path="history" element={<VerificationHistory />} />
+            <Route path="verified" element={<VerifiedDocument />} />
+            <Route path="settings" element={<InstitutionSettings />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="status" element={<StatusPage />} />
+            <Route path="blockchain-status" element={<StatusPage />} />
+          </Route>
+          
+          {/* Admin Routes */}
+          <Route path="/admin" element={<InstitutionLayout />}>
+            <Route path="add-verifier" element={<AddVerifier />} />
+          </Route>
 
-        {/* Institution Routes */}
-        <Route path="/institution" element={<InstitutionLayout />}>
-          <Route path="dashboard" element={<InstitutionDashboard />} />
-          <Route path="pending" element={<PendingVerification />} />
-          <Route path="verification" element={<VerificationDocument />} />
-          <Route path="history" element={<VerificationHistory />} />
-          <Route path="Verified" element={<VerifiedDocument />} />
-          <Route path="settings" element={<InstitutionSettings />} />
-          <Route path="clients" element={<Clients />} />
-          <Route path="verification/:id" element={<VerificationPage />} />
-          <Route path="blockchain-status" element={<StatusPage />} />
-        </Route>
-
-        {/* Redirect root to login */}
-        <Route path="/" element={<Login />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Redirect root to login */}
+          <Route path="/" element={<Login />} />
+        </Routes>
+      </BrowserRouter>
+    </WalletProvider>
   )
 }
 
-export default App
+export default App;

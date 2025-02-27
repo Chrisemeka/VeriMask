@@ -1,7 +1,9 @@
+// src/pages/StatusPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, Server, Database, Link, Unlink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { toast } from 'react-hot-toast';
+import blockchainService from '../../services/BlockchainIntegration';
 
 const StatusPage = () => {
   const navigate = useNavigate();
@@ -16,58 +18,82 @@ const StatusPage = () => {
     syncStatus: 'disconnected',
     contracts: {
       identityVerification: {
-        address: '0x169B2a4Fb47373aDBf82413AB666a80cA507aEDF',
+        address: '0x7A950d2311E19e14F4a7A0A980dC1e24eA7bf0E0',
         status: 'unknown'
       }
     },
-    pendingTransactions: 0,
-    verifications: {
-      pending: 0,
-      completed: 0,
-      rejected: 0
+    wallet: null,
+    isVerifier: false,
+    statistics: {
+      pendingVerifications: 0,
+      completedVerifications: 0,
+      rejectedVerifications: 0
     }
   });
 
-  // For demo purposes - in production this would connect to your blockchain node
   const fetchBlockchainStatus = async () => {
     setLoading(true);
     try {
-      // Get real blockchain data
+      // Initialize blockchain service
+      await blockchainService.init();
+      
+      // Get network information
       const networkInfo = await blockchainService.getNetworkInfo();
       
-      // Check if contract is active by calling a simple method
+      // Check if contract is active
       let contractStatus = 'unknown';
       try {
         await blockchainService.contract.methods.owner().call();
         contractStatus = 'active';
-      } catch {
+      } catch (error) {
         contractStatus = 'error';
+        console.error("Contract check error:", error);
       }
       
+      // Try to get wallet information
+      let wallet = null;
+      let isVerifier = false;
+      
+      try {
+        wallet = await blockchainService.connectWallet();
+        if (wallet) {
+          isVerifier = await blockchainService.isVerifier(wallet);
+        }
+      } catch (error) {
+        console.log("Wallet not connected", error);
+      }
+      
+      // For statistics, we would need backend API for real data
+      // This is just for demonstration
+      const statistics = {
+        pendingVerifications: 12,
+        completedVerifications: 32,
+        rejectedVerifications: 5
+      };
+      
       setBlockchainStatus({
-        connected: true,
-        latestBlock: networkInfo.latestBlock,
-        peerCount: networkInfo.peerCount,
-        gasPrice: networkInfo.gasPrice,
-        networkId: networkInfo.networkId.toString(),
-        syncStatus: 'synced',
+        connected: networkInfo.connected,
+        latestBlock: networkInfo.latestBlock || 0,
+        peerCount: networkInfo.peerCount || 0,
+        gasPrice: networkInfo.gasPrice || 0,
+        networkId: networkInfo.networkId ? networkInfo.networkId.toString() : '0',
+        syncStatus: networkInfo.connected ? 'synced' : 'disconnected',
         contracts: {
           identityVerification: {
             address: blockchainService.contractAddress,
             status: contractStatus
           }
         },
-        // You'd need additional API calls to get these statistics
-        pendingTransactions: 0,
-        verifications: {
-          pending: 0,
-          completed: 0,
-          rejected: 0
-        }
+        wallet,
+        isVerifier,
+        statistics
       });
-      setLoading(false);
+      
+      setError(null);
     } catch (err) {
-      setError("Failed to connect to blockchain node");
+      console.error("Blockchain status error:", err);
+      setError("Failed to connect to blockchain network");
+    } finally {
       setLoading(false);
     }
   };
@@ -85,7 +111,14 @@ const StatusPage = () => {
 
   // Manually refresh status
   const handleRefresh = () => {
-    fetchBlockchainStatus();
+    toast.promise(
+      fetchBlockchainStatus(),
+      {
+        loading: 'Refreshing blockchain status...',
+        success: 'Blockchain status updated',
+        error: 'Failed to update blockchain status'
+      }
+    );
   };
 
   // Determine network name from ID
@@ -125,10 +158,24 @@ const StatusPage = () => {
     
     return (
       <div className="flex items-center">
-        <div className={`h-3 w-3 rounded-full ${getStatusColor()} mr-2`}></div>
+        <div className={`h-3 w-3 rounded-full ${getStatusColor(status)} mr-2`}></div>
         <span>{text || status}</span>
       </div>
     );
+  };
+
+  // Connect wallet handler
+  const handleConnectWallet = async () => {
+    try {
+      const address = await blockchainService.connectWallet();
+      if (address) {
+        toast.success('Wallet connected successfully');
+        fetchBlockchainStatus();
+      }
+    } catch (error) {
+      console.error("Wallet connection error:", error);
+      toast.error('Failed to connect wallet');
+    }
   };
 
   return (
@@ -144,7 +191,7 @@ const StatusPage = () => {
         </button>
       </div>
 
-      {loading ? (
+      {loading && !blockchainStatus.connected ? (
         <div className="text-center py-10">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mb-4"></div>
           <p className="text-gray-600">Connecting to blockchain...</p>
@@ -153,11 +200,65 @@ const StatusPage = () => {
         <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
           <div className="flex items-center">
             <AlertTriangle className="h-6 w-6 text-red-500 mr-3" />
-            <p className="text-red-700">{error}</p>
+            <div>
+              <p className="text-red-700">{error}</p>
+              <button
+                onClick={handleRefresh}
+                className="mt-2 text-sm text-red-700 underline"
+              >
+                Try again
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Wallet Connection Status */}
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="px-4 py-5 sm:p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                <Shield className="h-5 w-5 mr-2 text-gray-500" />
+                Wallet Status
+              </h2>
+              
+              {blockchainStatus.wallet ? (
+                <div className="flex flex-col space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <StatusIndicator status="connected" text="Connected" />
+                      <span className="ml-4 text-sm font-mono">
+                        {blockchainStatus.wallet.substring(0, 8)}...{blockchainStatus.wallet.substring(blockchainStatus.wallet.length - 6)}
+                      </span>
+                    </div>
+                    
+                    <div>
+                      {blockchainStatus.isVerifier ? (
+                        <span className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                          Verifier
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                          Client
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-md">
+                  <Unlink className="h-8 w-8 text-gray-400 mb-2" />
+                  <p className="text-gray-500 mb-4">No wallet connected</p>
+                  <button
+                    onClick={handleConnectWallet}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Connect Wallet
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Connection Status */}
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
@@ -184,32 +285,8 @@ const StatusPage = () => {
                   </div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-sm text-gray-500">Peers</span>
-                  <span className="text-lg font-medium">{blockchainStatus.peerCount}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Blockchain Details */}
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                <Database className="h-5 w-5 mr-2 text-gray-500" />
-                Blockchain Details
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="flex flex-col">
                   <span className="text-sm text-gray-500">Latest Block</span>
                   <span className="text-lg font-medium">{blockchainStatus.latestBlock.toLocaleString()}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm text-gray-500">Gas Price</span>
-                  <span className="text-lg font-medium">{blockchainStatus.gasPrice} Gwei</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm text-gray-500">Pending Transactions</span>
-                  <span className="text-lg font-medium">{blockchainStatus.pendingTransactions}</span>
                 </div>
               </div>
             </div>
@@ -259,7 +336,7 @@ const StatusPage = () => {
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
               <h2 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                <Shield className="h-5 w-5 mr-2 text-gray-500" />
+                <Database className="h-5 w-5 mr-2 text-gray-500" />
                 Verification Statistics
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -268,8 +345,8 @@ const StatusPage = () => {
                     <CheckCircle className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-green-700">Completed</p>
-                    <p className="text-2xl font-semibold text-green-900">{blockchainStatus.verifications.completed}</p>
+                    <p className="text-sm text-green-700">Verified</p>
+                    <p className="text-2xl font-semibold text-green-900">{blockchainStatus.statistics.completedVerifications}</p>
                   </div>
                 </div>
                 <div className="bg-yellow-50 p-4 rounded-lg flex items-center">
@@ -278,7 +355,7 @@ const StatusPage = () => {
                   </div>
                   <div>
                     <p className="text-sm text-yellow-700">Pending</p>
-                    <p className="text-2xl font-semibold text-yellow-900">{blockchainStatus.verifications.pending}</p>
+                    <p className="text-2xl font-semibold text-yellow-900">{blockchainStatus.statistics.pendingVerifications}</p>
                   </div>
                 </div>
                 <div className="bg-red-50 p-4 rounded-lg flex items-center">
@@ -287,30 +364,31 @@ const StatusPage = () => {
                   </div>
                   <div>
                     <p className="text-sm text-red-700">Rejected</p>
-                    <p className="text-2xl font-semibold text-red-900">{blockchainStatus.verifications.rejected}</p>
+                    <p className="text-2xl font-semibold text-red-900">{blockchainStatus.statistics.rejectedVerifications}</p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* System Actions */}
+          {/* Gas Information */}
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">System Actions</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                  View Contract on Explorer
-                </button>
-                <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                  View Verification Logs
-                </button>
-                <button className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                  Test Contract Connection
-                </button>
-                <button className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                  View Gas Analytics
-                </button>
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Gas Information</h2>
+              <div className="flex items-center">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500">Current Gas Price</p>
+                  <p className="text-xl font-semibold">{blockchainStatus.gasPrice} Gwei</p>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">
+                    <p>Estimated cost per transaction:</p>
+                    <div className="mt-1 bg-gray-100 p-2 rounded">
+                      <p>Document Upload: ~{(blockchainStatus.gasPrice * 200000 / 1000000000).toFixed(6)} ETH</p>
+                      <p>Document Verification: ~{(blockchainStatus.gasPrice * 150000 / 1000000000).toFixed(6)} ETH</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
