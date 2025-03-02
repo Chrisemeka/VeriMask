@@ -1,249 +1,255 @@
-## Integration Guide for Django Backend
+# VeriMask - Blockchain-Based Identity Verification System
 
-Create an additional section in your README.md file:
+Welcome to **VeriMask**, a blockchain-based identity verification system for financial services. This project combines **React** for the frontend, **Django** for the backend, and **Ethereum blockchain** for secure document verification.
 
-markdown
-## Django Backend Integration
+## Table of Contents
 
-### Setup 
+- [Prerequisites](#prerequisites)
+- [Setup Instructions](#setup-instructions)
+  - [Backend (Django)](#backend-django)
+  - [Frontend (React)](#frontend-react)
+  - [Blockchain (Ethereum)](#blockchain-ethereum)
+- [Running the System](#running-the-system)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
 
-1. Install required packages:
-   
-   pip install web3 django-rest-framework python-dotenv ipfshttpclient
-   
+## Prerequisites
 
-2. Create a Web3 utility in your Django project:
+Before you begin, ensure you have the following installed:
 
-   Create a file `blockchain_utils.py`:
+- **Python 3.8+**
+- **Node.js 16+**
+- **PostgreSQL**
+- **Redis** (for Celery and Django Channels)
+- **MetaMask** (for blockchain interactions)
+- **Git**
 
-   python
-   from web3 import Web3
-   import json
-   import os
-   from dotenv import load_dotenv
+## Setup Instructions
 
-   load_dotenv()
+### 1. Backend (Django)
 
-   # Load contract ABI
-   with open('path/to/IdentityVerification.json', 'r') as f:
-       contract_data = json.load(f)
-       CONTRACT_ABI = contract_data['abi']
+#### Clone the repository:
 
-   CONTRACT_ADDRESS = os.getenv('CONTRACT_ADDRESS')
-   WEB3_PROVIDER = os.getenv('WEB3_PROVIDER', 'http://localhost:7545')
-   PRIVATE_KEY = os.getenv('ETHEREUM_PRIVATE_KEY')
-
-   def get_web3():
-       return Web3(Web3.HTTPProvider(WEB3_PROVIDER))
-
-   def get_contract():
-       web3 = get_web3()
-       return web3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
-
-   def get_account():
-       web3 = get_web3()
-       account = web3.eth.account.from_key(PRIVATE_KEY)
-       return account
-
-   # Document functions
-   def upload_document_to_blockchain(user_address, ipfs_hash, document_type):
-       """Upload document info to blockchain"""
-       web3 = get_web3()
-       contract = get_contract()
-       account = get_account()
-       
-       # Build transaction
-       tx = contract.functions.uploadDocument(ipfs_hash, document_type).build_transaction({
-           'from': account.address,
-           'nonce': web3.eth.get_transaction_count(account.address),
-           'gas': 2000000,
-           'gasPrice': web3.to_wei('50', 'gwei')
-       })
-       
-       # Sign and send transaction
-       signed_tx = web3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
-       tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
-       
-       # Wait for receipt
-       receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
-       return receipt
-
-   def verify_document_on_blockchain(user_address, doc_index, status, notes):
-       """Verify a document on the blockchain"""
-       web3 = get_web3()
-       contract = get_contract()
-       account = get_account()
-       
-       # Build transaction
-       tx = contract.functions.verifyDocument(user_address, doc_index, status, notes).build_transaction({
-           'from': account.address,
-           'nonce': web3.eth.get_transaction_count(account.address),
-           'gas': 2000000,
-           'gasPrice': web3.to_wei('50', 'gwei')
-       })
-       
-       # Sign and send transaction
-       signed_tx = web3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
-       tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
-       
-       # Wait for receipt
-       receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
-       return receipt
-
-   def get_document_from_blockchain(user_address, doc_index):
-       """Get document details from blockchain"""
-       contract = get_contract()
-       return contract.functions.getDocument(user_address, doc_index).call()
-   
-
-3. Create Django models for storing document data:
-
-   python
-   # models.py
-   from django.db import models
-   from django.contrib.auth.models import User
-
-   class Document(models.Model):
-       STATUS_CHOICES = [
-           ('Pending', 'Pending'),
-           ('Verified', 'Verified'),
-           ('Rejected', 'Rejected'),
-       ]
-       
-       user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='documents')
-       ipfs_hash = models.CharField(max_length=100)
-       document_type = models.CharField(max_length=50)
-       file_name = models.CharField(max_length=255)
-       status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
-       upload_date = models.DateTimeField(auto_now_add=True)
-       verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_documents')
-       verification_date = models.DateTimeField(null=True, blank=True)
-       notes = models.TextField(blank=True)
-       blockchain_index = models.IntegerField(null=True, blank=True)
-       blockchain_tx_hash = models.CharField(max_length=100, blank=True)
-       wallet_address = models.CharField(max_length=42, blank=True)
-   
-
-4. Example Django view for document uploads:
-
-   python
-   # views.py
-   import ipfshttpclient
-   from rest_framework.views import APIView
-   from rest_framework.response import Response
-   from rest_framework import status
-   from .models import Document
-   from .blockchain_utils import upload_document_to_blockchain
-
-   class DocumentUploadView(APIView):
-       def post(self, request):
-           # Handle file upload
-           file = request.FILES.get('file')
-           if not file:
-               return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
-           
-           document_type = request.data.get('document_type')
-           user = request.user
-           
-           # Connect to IPFS
-           client = ipfshttpclient.connect('/dns/ipfs.infura.io/tcp/5001/https')
-           
-           # Upload to IPFS
-           ipfs_result = client.add(file.read())
-           ipfs_hash = ipfs_result['Hash']
-           
-           # Create document in database
-           document = Document.objects.create(
-               user=user,
-               ipfs_hash=ipfs_hash,
-               document_type=document_type,
-               file_name=file.name,
-               wallet_address=user.profile.wallet_address  # Assuming you store wallet address in user profile
-           )
-           
-           # Upload to blockchain
-           try:
-               tx_receipt = upload_document_to_blockchain(
-                   user.profile.wallet_address,
-                   ipfs_hash,
-                   document_type
-               )
-               
-               # Get document index from transaction logs
-               # This requires parsing the event logs to find the document index
-               log_data = contract.events.DocumentUploaded().process_receipt(tx_receipt)
-               if log_data:
-                   # Get document count to use as index
-                   doc_count = contract.functions.getDocumentCount(user.profile.wallet_address).call() - 1
-                   document.blockchain_index = doc_count
-                   document.blockchain_tx_hash = tx_receipt['transactionHash'].hex()
-                   document.save()
-               
-               return Response({
-                   'message': 'Document uploaded successfully',
-                   'document_id': document.id,
-                   'ipfs_hash': ipfs_hash
-               })
-           except Exception as e:
-               # Handle blockchain errors
-               document.delete()  # Rollback if blockchain upload fails
-               return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-   
-
-5. Example verification view:
-
-   python
-   class DocumentVerificationView(APIView):
-       def post(self, request, document_id):
-           # Ensure user is an institution
-           if not request.user.profile.is_institution:
-               return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
-           
-           document = Document.objects.get(id=document_id)
-           status_value = request.data.get('status')
-           notes = request.data.get('notes', '')
-           
-           # Update document in database
-           document.status = status_value
-           document.verified_by = request.user
-           document.verification_date = timezone.now()
-           document.notes = notes
-           document.save()
-           
-           # Update on blockchain
-           try:
-               verify_document_on_blockchain(
-                   document.wallet_address,
-                   document.blockchain_index,
-                   status_value,
-                   notes
-               )
-               return Response({'message': 'Document verified successfully'})
-           except Exception as e:
-               return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-   ```
+```bash
+git clone https://github.com/your-username/VeriMask.git
+cd VeriMask/backend
 ```
 
-## Rest of Your Blockchain Development
+#### Create a virtual environment and activate it:
 
-The good news is that your blockchain development can proceed as planned. The contract, testing, and deployment processes don't change! 
+```bash
+python -m venv blockchain_venv
+source blockchain_venv/bin/activate  # On Windows: blockchain_venv\Scripts\activate
+```
 
-The main consideration for the Django integration is providing your teammate with:
+#### Install dependencies:
 
-1. The contract ABI (JSON interface) from the compiled contracts
-2. The deployed contract address
-3. Documentation on how to call contract functions from Python (as shown above)
+```bash
+pip install -r requirements.txt
+```
+```bash
+cd backend
+```
 
-Make sure to place your compiled contract JSON file in a location that can be accessed by the Django application when it's time to integrate.
+#### Set up the database:
 
-## Local Development Workflow for Testing Integration
+1. Create a **PostgreSQL database** named `verimask`.
+2. Update the database settings in `settings.py`:
 
-When it's time to test integration, you can:
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'verimask',
+        'USER': 'your_db_user',
+        'PASSWORD': 'your_db_password',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
+}
+```
 
-1. Deploy your contract on Ganache
-2. Share the contract address and ABI with your teammate
-3. Have your teammate configure Django to connect to the same Ganache instance
+#### Run migrations:
 
-You might want to set up a shared development environment where both the blockchain and Django components can be tested together.
+```bash
+python manage.py migrate
+```
 
-This approach keeps your blockchain work separate but ensures it will be compatible with your teammate's Django backend when it's time to integrate them.
+#### Create a superuser:
+
+```bash
+python manage.py createsuperuser
+```
+
+#### Set up environment variables:
+
+Create a `.env` file in the **backend** directory and add the following:
+
+```env
+SECRET_KEY=your_secret_key
+DEBUG=True
+DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/verimask
+WEB3_PROVIDER=http://localhost:7545  # Local Ethereum node
+CONTRACT_ADDRESS=your_contract_address
+ETHEREUM_PRIVATE_KEY=your_private_key
+```
+
+---
+
+### 2. Frontend (React)
+
+#### Navigate to the frontend directory:
+
+```bash
+cd ../frontend
+```
+
+#### Install dependencies:
+
+```bash
+npm install
+```
+
+#### Set up environment variables:
+
+Create a `.env` file in the **frontend** directory and add:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api/v1/
+```
+
+---
+
+### 3. Blockchain (Ethereum)
+
+- Ensure you have **Ganache** or **Hardhat** running for a local Ethereum blockchain.
+- Deploy the **smart contract** and update the `CONTRACT_ADDRESS` in the `.env` file.
+
+---
+
+## Running the System
+
+### 1. Backend
+
+#### Start the Django development server:
+
+```bash
+python manage.py runserver
+```
+
+#### Start Celery for background tasks:
+
+```bash
+celery -A backend worker --loglevel=info
+```
+
+#### Start Redis (required for Celery and Django Channels):
+
+```bash
+redis-server
+```
+
+#### Start Daphne for WebSocket support:
+
+```bash
+daphne backend.asgi:application
+```
+
+---
+
+### 2. Frontend
+
+#### Start the React development server:
+
+```bash
+npm run dev
+```
+
+#### Open your browser and navigate to:
+
+```
+http://localhost:5173
+```
+
+---
+
+### 3. Blockchain
+
+- Ensure your local Ethereum node (e.g., **Ganache**) is running.
+- Connect your **MetaMask wallet** to the local Ethereum node.
+
+---
+
+## Testing
+
+### 1. Backend Tests
+
+Run Django tests:
+
+```bash
+python manage.py test
+```
+
+### 2. Frontend Tests
+
+Run React tests:
+
+```bash
+npm test
+```
+
+---
+
+## Troubleshooting
+
+### 1. Database Issues
+
+- Ensure **PostgreSQL** is running and the database credentials are correct.
+- Run:
+
+```bash
+python manage.py migrate
+```
+
+### 2. Blockchain Issues
+
+- Ensure your local Ethereum node is running and **MetaMask** is connected.
+- Verify the `CONTRACT_ADDRESS` and `ETHEREUM_PRIVATE_KEY` in the `.env` file.
+
+### 3. Frontend Issues
+
+- Ensure the `VITE_API_BASE_URL` in the `.env` file points to the correct backend URL.
+
+---
+
+## Contributing
+
+If you'd like to contribute to this project, please follow these steps:
+
+1. **Fork** the repository.
+2. **Create a new branch** for your feature or bugfix.
+3. **Submit a pull request** with a detailed description of your changes.
+
+---
+
+## License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## Contact
+
+For any questions or issues, feel free to reach out:
+
+📧 **Email:** [your-email@example.com](mailto\:your-email@example.com)
+
+🐙 **GitHub:** [your-username](https://github.com/your-username)
+
+---
+
+Enjoy using **VeriMask**! 🚀
+
