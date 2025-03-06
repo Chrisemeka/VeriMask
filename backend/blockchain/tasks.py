@@ -1,5 +1,5 @@
 from web3 import Web3
-from backend.celery import shared_task
+from celery import shared_task
 from .models import Document, User
 from .blockchain_utils import get_contract
 from celery.exceptions import Retry
@@ -7,7 +7,7 @@ import time
 
 @shared_task(bind=True, max_retries=3)
 def listen_for_events(self):
-    web3 = Web3(Web3.HTTPProvider('http://localhost:7545'))
+    web3 = Web3(Web3.HTTPProvider('http://localhost:8545'))
     contract = get_contract()
     
     event_filter = contract.events.DocumentUploaded.create_filter(fromBlock='latest')

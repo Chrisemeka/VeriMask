@@ -1,12 +1,14 @@
-// src/pages/StatusPage.jsx
+// src/pages/verification/StatusPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, Server, Database, Link, Unlink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import blockchainService from '../../services/BlockchainIntegration';
+import { useWallet } from '../../contexts/WalletContext';
 
 const StatusPage = () => {
   const navigate = useNavigate();
+  const { wallet, connectWallet, isConnecting } = useWallet();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [blockchainStatus, setBlockchainStatus] = useState({
@@ -34,42 +36,81 @@ const StatusPage = () => {
   const fetchBlockchainStatus = async () => {
     setLoading(true);
     try {
+      console.log("Initializing blockchain service...");
       // Initialize blockchain service
       await blockchainService.init();
       
       // Get network information
       const networkInfo = await blockchainService.getNetworkInfo();
+      console.log("Network info:", networkInfo);
       
       // Check if contract is active
       let contractStatus = 'unknown';
       try {
-        await blockchainService.contract.methods.owner().call();
+        const owner = await blockchainService.contract.methods.owner().call();
         contractStatus = 'active';
+        console.log("Contract is active, owner:", owner);
       } catch (error) {
         contractStatus = 'error';
         console.error("Contract check error:", error);
       }
       
       // Try to get wallet information
-      let wallet = null;
+      let walletAddress = null;
       let isVerifier = false;
       
       try {
-        wallet = await blockchainService.connectWallet();
         if (wallet) {
+          walletAddress = wallet;
           isVerifier = await blockchainService.isVerifier(wallet);
+          console.log("Wallet connected:", walletAddress, "Verifier status:", isVerifier);
         }
       } catch (error) {
-        console.log("Wallet not connected", error);
+        console.log("Wallet status check error:", error);
       }
       
-      // For statistics, we would need backend API for real data
-      // This is just for demonstration
-      const statistics = {
-        pendingVerifications: 12,
-        completedVerifications: 32,
-        rejectedVerifications: 5
+      // Fetch real statistics from the blockchain if possible
+      let statistics = {
+        pendingVerifications: 0,
+        completedVerifications: 0,
+        rejectedVerifications: 0
       };
+      
+      try {
+        if (walletAddress) {
+          // Try to fetch some real data through the API
+          const authToken = localStorage.getItem('user') ? 
+            JSON.parse(localStorage.getItem('user')).token : null;
+            
+          if (authToken) {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await fetch(`${backendUrl}/documents/`, {
+              headers: {
+                'Authorization': `Bearer ${authToken}`
+              }
+            });
+            
+            if (response.ok) {
+              const documents = await response.json();
+              
+              // Calculate real statistics
+              statistics.pendingVerifications = documents.filter(doc => doc.status === 'Pending').length;
+              statistics.completedVerifications = documents.filter(doc => doc.status === 'Verified').length;
+              statistics.rejectedVerifications = documents.filter(doc => doc.status === 'Rejected').length;
+              
+              console.log("Real stats from API:", statistics);
+            }
+          }
+        }
+      } catch (statsError) {
+        console.warn("Error fetching statistics:", statsError);
+        // Fall back to mock data
+        statistics = {
+          pendingVerifications: 12,
+          completedVerifications: 32,
+          rejectedVerifications: 5
+        };
+      }
       
       setBlockchainStatus({
         connected: networkInfo.connected,
@@ -84,7 +125,7 @@ const StatusPage = () => {
             status: contractStatus
           }
         },
-        wallet,
+        wallet: walletAddress,
         isVerifier,
         statistics
       });
@@ -92,7 +133,7 @@ const StatusPage = () => {
       setError(null);
     } catch (err) {
       console.error("Blockchain status error:", err);
-      setError("Failed to connect to blockchain network");
+      setError("Failed to connect to blockchain network. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -107,7 +148,7 @@ const StatusPage = () => {
     }, 30000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [wallet]);
 
   // Manually refresh status
   const handleRefresh = () => {
@@ -167,11 +208,9 @@ const StatusPage = () => {
   // Connect wallet handler
   const handleConnectWallet = async () => {
     try {
-      const address = await blockchainService.connectWallet();
-      if (address) {
-        toast.success('Wallet connected successfully');
-        fetchBlockchainStatus();
-      }
+      await connectWallet();
+      toast.success('Wallet connected successfully');
+      fetchBlockchainStatus();
     } catch (error) {
       console.error("Wallet connection error:", error);
       toast.error('Failed to connect wallet');

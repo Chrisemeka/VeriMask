@@ -28,16 +28,29 @@ const AddVerifier = () => {
   };
 
   // Check if the connected wallet is the contract owner
+  // Check if the connected wallet is the contract owner
   const checkOwnership = async () => {
     try {
       if (!walletConnected) {
         await connectWallet();
       }
       
+      // Make sure blockchain service is initialized
+      await blockchainService.init();
+      
+      // Get the owner address
       const owner = await blockchainService.contract.methods.owner().call();
-      return owner.toLowerCase() === currentAddress.toLowerCase();
+      console.log("Contract owner:", owner);
+      console.log("Current address:", currentAddress);
+      
+      // Case-insensitive comparison of addresses
+      const isOwner = owner.toLowerCase() === currentAddress.toLowerCase();
+      console.log("Is current wallet the owner?", isOwner);
+      
+      return isOwner;
     } catch (error) {
       console.error("Error checking ownership:", error);
+      toast.error(`Error checking contract ownership: ${error.message}`);
       return false;
     }
   };
@@ -62,9 +75,17 @@ const AddVerifier = () => {
         throw new Error('Only the contract owner can add verifiers');
       }
       
-      // Add verifier
+      // Get the current gas price for legacy transaction format
+      const gasPrice = await blockchainService.web3.eth.getGasPrice();
+      console.log("Using gas price:", gasPrice);
+      
+      // Add verifier with legacy transaction format to avoid EIP-1559 errors
       await blockchainService.contract.methods.addVerifier(verifierAddress)
-        .send({ from: currentAddress });
+        .send({ 
+          from: currentAddress,
+          gasPrice: gasPrice,     // Use current network gas price
+          gas: 200000             // Set fixed gas limit
+        });
       
       // Check if the address is now a verifier
       const isVerifier = await blockchainService.isVerifier(verifierAddress);

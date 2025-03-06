@@ -1,4 +1,4 @@
-// Updated App.jsx with WalletProvider
+// Updated App.jsx with fixed routing
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { WalletProvider } from './contexts/WalletContext';
@@ -19,10 +19,12 @@ import Clients from './pages/Institution/Clients';
 import VerifiedDocument from './pages/Institution/verification/VerifiedDocument';
 import StatusPage from './pages/verification/StatusPage';
 import AddVerifier from './pages/Institution/verification/AddVerifier';
+import { NotificationProvider } from './contexts/NotificationContext'
 
 function App() {
   return (
     <WalletProvider>
+     <NotificationProvider>
       <BrowserRouter>
         <Toaster position="top-right" />
         <Routes>
@@ -43,6 +45,7 @@ function App() {
             <Route path="dashboard" element={<InstitutionDashboard />} />
             <Route path="pending" element={<PendingVerification />} />
             <Route path="verification" element={<VerificationDocument />} />
+            {/* Fixed route - Add :id as a parameter */}
             <Route path="verification/:id" element={<VerificationDocument />} />
             <Route path="history" element={<VerificationHistory />} />
             <Route path="verified" element={<VerifiedDocument />} />
@@ -61,6 +64,7 @@ function App() {
           <Route path="/" element={<Login />} />
         </Routes>
       </BrowserRouter>
+      </NotificationProvider>
     </WalletProvider>
   )
 }

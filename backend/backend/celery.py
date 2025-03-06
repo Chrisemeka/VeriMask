@@ -1,6 +1,6 @@
 import os
-from celery import Celery
-from celery.schedules import crontab  # Optional: For periodic tasks
+from celery import Celery, shared_task
+from celery.schedules import crontab
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 

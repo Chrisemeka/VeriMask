@@ -120,6 +120,7 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
@@ -129,7 +130,12 @@ CORS_ALLOW_CREDENTIALS = True
 # CORS configuration
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]  # Use environment variable
+
+# Pinata IPFS Configuration
+PINATA_API_KEY = '7f1130570d910c888589'  # Update with your new key
+PINATA_API_SECRET = '7f4818ad1a5b881ccfce062651c2e27643315160c29cd6798b09572433abc960'  # Update with your new secret
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
