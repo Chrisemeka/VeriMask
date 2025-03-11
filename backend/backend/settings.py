@@ -99,7 +99,7 @@ DATABASES = {
         'NAME': 'blockchain',
         'USER': 'postgres',
         'PASSWORD': '4872',
-        'HOST': 'localhost',  # Replace with your PostgreSQL server's address if necessary
+        'HOST': '127.0.0.1',  # Replace with your PostgreSQL server's address if necessary
         'PORT': '',          # Leave empty to use the default PostgreSQL port (usually 5432)
     }
 }
