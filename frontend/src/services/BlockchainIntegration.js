@@ -465,22 +465,19 @@ class BlockchainService {
     }
   }
 
-// Update this function in BlockchainIntegration.js
-
 /**
- * Verify document on blockchain with comprehensive error handling and fallbacks
+ * Verify document on blockchain with proper address validation
  * @param {string} userAddress - User's wallet address
  * @param {number} documentIndex - Document index
  * @param {string} status - Verification status
  * @param {string} notes - Verification notes
  * @returns {Promise<object>} - Transaction receipt
  */
+// Replace your verifyDocument function in BlockchainIntegration.js with this version
+
 async verifyDocument(userAddress, documentIndex, status, notes) {
   try {
-    // Initialize if not done already
-    if (!this.initialized) {
-      await this.init();
-    }
+    await this.init();
     
     // Connect wallet if not already connected
     if (!this.account) {
@@ -491,58 +488,30 @@ async verifyDocument(userAddress, documentIndex, status, notes) {
     console.log("User Address:", userAddress);
     console.log("Document Index:", documentIndex);
     console.log("Status:", status);
-    console.log("Notes:", notes);
     
-    // Normalize and validate inputs
-    // Default the userAddress if not provided or invalid
-    if (!userAddress || userAddress === '0x0000000000000000000000000000000000000000') {
-      if (this.account) {
-        userAddress = this.account;
-        console.log("Using current account as user address:", userAddress);
-      } else {
-        throw new Error("No valid user address provided");
-      }
+    // Validate Ethereum address format
+    if (!userAddress || typeof userAddress !== 'string' || !userAddress.startsWith('0x') || userAddress.length !== 42) {
+      throw new Error(`Invalid Ethereum address: ${userAddress}`);
     }
     
-    // Ensure document index is a number
-    let docIndex = Number(documentIndex);
-    if (isNaN(docIndex)) {
-      console.warn(`Invalid document index: ${documentIndex}, defaulting to 0`);
-      docIndex = 0;
+    // Validate document index
+    const docIndex = parseInt(documentIndex, 10);
+    if (isNaN(docIndex) || docIndex < 0) {
+      throw new Error(`Invalid document index: ${documentIndex}`);
     }
     
-    // Get current gas price with safety margin
-    const gasPrice = await this.web3.eth.getGasPrice();
-    const gasPriceWithMargin = Math.floor(Number(gasPrice) * 1.2).toString();
+    // This approach will show MetaMask popup to the user
+    const tx = await this.contract.methods.verifyDocument(
+      userAddress, 
+      docIndex,
+      status, 
+      notes || ''
+    ).send({ from: this.account });
     
-    // Create transaction object using legacy format
-    const tx = {
-      from: this.account,
-      to: this.contractAddress,
-      gas: 500000,
-      gasPrice: gasPriceWithMargin,
-      data: this.contract.methods.verifyDocument(userAddress, docIndex, status, notes || '').encodeABI()
-    };
-    
-    // Send transaction
-    const receipt = await this.web3.eth.sendTransaction(tx);
-    
-    console.log("Document verified successfully:", receipt.transactionHash);
-    return receipt;
+    console.log("Document verified successfully:", tx.transactionHash);
+    return tx;
   } catch (error) {
     console.error("Document verification error:", error);
-    
-    // In development mode, return a mock receipt
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Returning mock transaction receipt for development");
-      return {
-        transactionHash: `mock-tx-${Date.now()}`,
-        status: true,
-        blockNumber: 12345,
-        gasUsed: 150000
-      };
-    }
-    
     throw error;
   }
 }

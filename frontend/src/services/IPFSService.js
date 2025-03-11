@@ -24,93 +24,68 @@ class IPFSService {
     try {
       console.log("Starting IPFS upload for file:", file.name);
       
-      // Using the credentials from environment variables
-      const apiKey = this.apiKey;
-      const apiSecret = this.apiSecret;
-      
-      // Log credentials (only first few characters for security)
-      console.log("Using Pinata API Key:", apiKey ? apiKey.substring(0, 4) + "..." : "Missing");
-      console.log("API Secret available:", !!apiSecret);
-      
-      // Create form data
+      // Using a direct API endpoint to avoid CORS issues
       const formData = new FormData();
       formData.append('file', file);
       
-      // Upload to Pinata
-      console.log("Sending request to Pinata...");
-      const response = await axios.post(
-        'https://api.pinata.cloud/pinning/pinFileToIPFS',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            'pinata_api_key': apiKey,
-            'pinata_secret_api_key': apiSecret
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity
-        }
-      );
+      // Try to upload using the backend proxy endpoint to avoid CORS
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const uploadUrl = `${backendUrl}/ipfs/upload/`; // This endpoint should proxy to Pinata
       
-      // Check for valid response
-      if (!response.data || !response.data.IpfsHash) {
-        console.error("Invalid response from Pinata:", response.data);
-        throw new Error('Failed to get IPFS hash from Pinata');
+      console.log("Uploading to IPFS via backend proxy:", uploadUrl);
+      const response = await axios.post(uploadUrl, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      if (response.data && response.data.ipfsHash) {
+        console.log("IPFS upload successful, hash:", response.data.ipfsHash);
+        return response.data.ipfsHash;
       }
       
-      console.log("IPFS upload successful, hash:", response.data.IpfsHash);
-      
-      // Verify file is accessible via gateway
-      await this.verifyFileAccessibility(response.data.IpfsHash);
-      
-      return response.data.IpfsHash;
+      throw new Error("Invalid response format from IPFS upload");
     } catch (error) {
       console.error('Error uploading to IPFS:', error);
       
-      // More detailed error information
-      if (error.response) {
-        console.error('Pinata API response:', error.response.status, error.response.data);
-      }
-      
-      // Instead of using the backend, try using our API directly
+      // Try a different approach without using Pinata directly
       try {
-        console.log("Trying to upload through backend API...");
-        // Create form data for backend
-        const backendFormData = new FormData();
-        backendFormData.append('file', file);
-        backendFormData.append('document_type', 'other'); // Default type
+        // Create form data for document upload endpoint
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('document_type', 'other'); // Default type
+        
+        // Get token for authentication
+        const token = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).token : null;
+        
+        if (!token) {
+          throw new Error("Authentication required for document upload");
+        }
         
         // Get backend URL from environment
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000/api/v1';
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        console.log("Uploading directly to document endpoint:", `${backendUrl}/documents/upload/`);
         
-        // Send to backend (which handles Pinata interaction)
-        const backendResponse = await axios.post(
+        // Send to document upload endpoint which should handle IPFS internally
+        const response = await axios.post(
           `${backendUrl}/documents/upload/`,
-          backendFormData,
+          formData,
           {
             headers: {
-              'Content-Type': 'multipart/form-data'
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${token}`
             }
           }
         );
         
-        if (backendResponse.data && backendResponse.data.ipfs_hash) {
-          console.log("Backend upload successful:", backendResponse.data);
-          return backendResponse.data.ipfs_hash;
+        if (response.data && response.data.ipfs_hash) {
+          console.log("Document upload with IPFS successful:", response.data.ipfs_hash);
+          return response.data.ipfs_hash;
         } else {
-          throw new Error("Backend didn't return a valid IPFS hash");
+          throw new Error("No IPFS hash in response");
         }
-      } catch (backendError) {
-        console.error("Backend upload also failed:", backendError);
-        
-        // In development mode, return a mock hash
-        if (process.env.NODE_ENV === 'development') {
-          const mockHash = 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX';
-          console.log("Using mock IPFS hash for development:", mockHash);
-          return mockHash;
-        }
-        
-        // If all fails, throw original error
+      } catch (uploadError) {
+        console.error("All upload methods failed:", uploadError);
         throw new Error(`IPFS upload failed: ${error.message}`);
       }
     }

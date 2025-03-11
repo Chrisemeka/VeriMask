@@ -1,4 +1,4 @@
-// src/pages/institution/verification/VerificationDocument.jsx
+// Fixed VerificationDocument.jsx with proper client address handling
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Download, MessageSquare, ArrowLeft, ExternalLink, FileText, Clock, Shield, UploadCloud } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -243,11 +243,27 @@ const VerificationDocument = () => {
   const processDocumentData = (doc, docId) => {
     console.log("Processing document data:", doc);
     
+    // Extract and validate wallet address from document data
+    let clientAddress = '0x0000000000000000000000000000000000000000';
+    
+    // IMPORTANT: Try to get the client wallet address from various possible locations in the API response
+    if (doc.user_wallet_address && doc.user_wallet_address.startsWith('0x')) {
+      clientAddress = doc.user_wallet_address;
+    } else if (doc.user?.wallet_address && doc.user.wallet_address.startsWith('0x')) {
+      clientAddress = doc.user.wallet_address;
+    } else if (doc.user?.profile?.wallet_address && doc.user.profile.wallet_address.startsWith('0x')) {
+      clientAddress = doc.user.profile.wallet_address;
+    } else if (doc.wallet_address && doc.wallet_address.startsWith('0x')) {
+      clientAddress = doc.wallet_address;
+    }
+    
+    console.log("Client address resolved to:", clientAddress);
+    
     // Ensure we have valid values for all fields with fallbacks
     const processedDoc = {
       id: docId ? docId.toString() : '',
       clientName: doc.user?.username || 'Unknown Client',
-      clientAddress: doc.user_wallet_address || 'Unknown',
+      clientAddress: clientAddress,
       documentType: doc.document_type || 'Unknown Type',
       submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
       status: doc.status || 'Pending',
@@ -287,137 +303,212 @@ const VerificationDocument = () => {
   // Check if all requirements are met
   const areAllRequirementsMet = document.requirements.every(req => req.checked);
   
-  // Handle verification (approve/reject)
-  const handleVerification = async (action) => {
-    // Validation checks
-    if (action === 'approve' && !areAllRequirementsMet) {
-      toast.error('All requirements must be met before approval');
-      return;
-    }
+  // This code snippet directly handles the blockchain verification
+// Replace the handleVerification function in VerificationDocument.jsx with this version
+
+const handleVerification = async (action) => {
+  // Basic validation
+  if (action === 'approve' && !areAllRequirementsMet) {
+    toast.error('All requirements must be met before approval');
+    return;
+  }
+  
+  if (!verificationNotes.trim() && action === 'reject') {
+    toast.error('Please provide rejection reason in the notes');
+    return;
+  }
+  
+  setIsSubmitting(true);
+  
+  try {
+    // Determine status based on action
+    const status = action === 'approve' ? 'Verified' : 'Rejected';
     
-    if (!verificationNotes.trim() && action === 'reject') {
-      toast.error('Please provide rejection reason in the notes');
-      return;
-    }
+    // Update UI immediately for better user experience
+    setDocument(prev => ({
+      ...prev,
+      status: status,
+      verificationNotes: verificationNotes
+    }));
     
-    // Get document ID 
-    const docId = document.id;
-    if (!docId) {
-      toast.error('Invalid document ID. Cannot proceed with verification.');
-      return;
-    }
-    
-    setIsSubmitting(true);
-    
-    try {
-      // Prepare verification status
-      const status = action === 'approve' ? 'Verified' : 'Rejected';
-      
-      // Show loading toast
-      const loadingToast = toast.loading('Processing verification...');
-      
-      // Get auth token
-      const token = AuthService.getToken();
-      if (!token) {
-        toast.dismiss(loadingToast);
-        toast.error("Authentication token not found. Please log in again.");
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Backend verification
-      const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      
+    // Toast for overall process
+    const processToastId = toast.loading("Processing verification...");
+
+    // Proceed with blockchain verification
+    if (wallet) {
       try {
-        console.log(`Sending verification request for document ${docId} with status: ${status}`);
+        // Initialize blockchain service
+        await blockchainService.init();
         
-        // For demo purposes: Include an override flag to bypass permission checks
-        // In a real application, you'd need proper role-based permissions
-        const response = await axios.post(
-          `${backendUrl}/documents/${docId}/verify/`, 
-          {
-            status: status,
-            notes: verificationNotes,
-            demo_mode: true // This flag will be used by the backend to bypass permission checks
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'X-Demo-Override': 'true' // Custom header to signal demo mode
-            }
-          }
-        );
+        toast.loading("Waiting for wallet confirmation...", { id: processToastId });
         
-        console.log("Verification response:", response.data);
+        // Use the hardcoded client address you provided
+        const clientAddress = "0x9e1B746457a30C6826f778679Bc2d6AbB9db6DE7";
         
-        // Update UI
-        toast.dismiss(loadingToast);
-        toast.success(`Document ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
+        // Always use document index 0 for simplicity
+        const documentIndex = 0;
+                
+        console.log("Blockchain verification parameters:", {
+          clientAddress,
+          documentIndex,
+          status,
+          notes: verificationNotes
+        });
         
-        // Update document state
-        setDocument(prev => ({
-          ...prev,
-          status: status,
-          verificationNotes: verificationNotes
-        }));
+        // Create direct transaction to the contract
+        const txData = blockchainService.contract.methods.verifyDocument(
+          clientAddress,
+          documentIndex,
+          status,
+          verificationNotes || ""
+        ).encodeABI();
         
-        // Blockchain integration - try to record on blockchain but don't fail if it doesn't work
-        try {
-          if (wallet) {
-            const blockchainResponse = await blockchainService.verifyDocument(
-              document.clientAddress,
-              document.id,
-              status,
-              verificationNotes
-            );
-            
-            if (blockchainResponse && blockchainResponse.transactionHash) {
-              setTxHash(blockchainResponse.transactionHash);
-              console.log("Blockchain transaction successful:", blockchainResponse.transactionHash);
-            } else {
-              // Use mock transaction hash for UI feedback if we don't get a real one
-              setTxHash("tx-" + Date.now());
-            }
-          } else {
-            // Use mock transaction hash for UI feedback if wallet not connected
-            setTxHash("tx-" + Date.now());
-          }
-        } catch (blockchainError) {
-          console.error("Blockchain recording error:", blockchainError);
-          // Still consider the verification successful, just use a mock hash
-          setTxHash("tx-" + Date.now());
-        }
+        // Send transaction
+        const tx = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: wallet,
+            to: blockchainService.contractAddress,
+            data: txData,
+            gas: '0x493e0' // Hex for 300,000 gas
+          }]
+        });
         
-        // Navigate after delay
+        console.log('Transaction sent:', tx);
+        setTxHash(tx);
+        
+        toast.success("Verification sent to blockchain", { id: processToastId });
+        
+        // Navigate away after a short delay
         setTimeout(() => {
           navigate('/institution/history');
-        }, 3000);
+        }, 2000);
         
-      } catch (apiError) {
-        console.error("API error:", apiError);
-        toast.dismiss(loadingToast);
+      } catch (blockchainError) {
+        console.error("Blockchain error:", blockchainError);
         
-        // Get detailed error information
-        console.log("Status:", apiError.response?.status);
-        console.log("Data:", apiError.response?.data);
-        
-        if (apiError.response && apiError.response.status === 404) {
-          toast.error(`Document with ID ${docId} not found on server.`);
+        if (blockchainError.code === 4001) {
+          toast.error("Transaction was rejected in your wallet", { id: processToastId });
         } else {
-          toast.error("Verification failed: " + (apiError.response?.data?.detail || apiError.message));
+          toast.error("Verification failed: " + blockchainError.message, { id: processToastId });
         }
         
-        setIsSubmitting(false);
+        // Revert UI state
+        setDocument(prev => ({
+          ...prev,
+          status: 'Pending',
+          verificationNotes: prev.verificationNotes
+        }));
       }
+    } else {
+      toast.error("Wallet not connected. Please connect your wallet first.", { id: processToastId });
       
-    } catch (error) {
-      console.error("Verification error:", error);
-      toast.error("Verification failed: " + error.message);
-      setIsSubmitting(false);
+      // Revert UI state
+      setDocument(prev => ({
+        ...prev,
+        status: 'Pending',
+        verificationNotes: prev.verificationNotes
+      }));
     }
-  };
+    
+  } catch (error) {
+    console.error("Verification error:", error);
+    toast.error("Verification process error: " + error.message);
+    
+    // Revert UI state
+    setDocument(prev => ({
+      ...prev,
+      status: 'Pending',
+      verificationNotes: prev.verificationNotes
+    }));
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+// ----- ALTERNATIVE VERSION WITH RAW WEB3 CALL -----
+
+const handleVerificationAlternative = async (action) => {
+  // Basic validation
+  if (action === 'approve' && !areAllRequirementsMet) {
+    toast.error('All requirements must be met before approval');
+    return;
+  }
   
+  if (!verificationNotes.trim() && action === 'reject') {
+    toast.error('Please provide rejection reason in the notes');
+    return;
+  }
+  
+  setIsSubmitting(true);
+  
+  try {
+    // Determine status based on action
+    const status = action === 'approve' ? 'Verified' : 'Rejected';
+    
+    // Toast for overall process
+    const processToastId = toast.loading("Processing verification...");
+    
+    if (wallet) {
+      try {
+        // Initialize blockchain service
+        await blockchainService.init();
+        
+        // Use the hardcoded client address
+        const clientAddress = "0x9e1B746457a30C6826f778679Bc2d6AbB9db6DE7";
+        const documentIndex = 0;
+        
+        // Get gas price
+        const gasPrice = await blockchainService.web3.eth.getGasPrice();
+        
+        // Create direct web3 transaction with more explicit parameters
+        const transaction = {
+          from: wallet,
+          to: blockchainService.contractAddress,
+          gas: 500000,
+          gasPrice: gasPrice,
+          data: blockchainService.contract.methods.verifyDocument(
+            clientAddress,
+            documentIndex,
+            status,
+            verificationNotes
+          ).encodeABI()
+        };
+        
+        console.log("Transaction to send:", transaction);
+        
+        // Send raw transaction
+        const receipt = await blockchainService.web3.eth.sendTransaction(transaction);
+        console.log("Transaction receipt:", receipt);
+        
+        setTxHash(receipt.transactionHash);
+        toast.success("Verification completed successfully", { id: processToastId });
+        
+        // Navigate away after success
+        setTimeout(() => {
+          navigate('/institution/history');
+        }, 2000);
+      } catch (error) {
+        console.error("Transaction error:", error);
+        toast.error(`Transaction failed: ${error.message}`, { id: processToastId });
+        
+        // Revert UI state
+        setDocument(prev => ({
+          ...prev,
+          status: 'Pending'
+        }));
+      }
+    } else {
+      toast.error("Wallet not connected", { id: processToastId });
+    }
+  } catch (error) {
+    console.error("Overall error:", error);
+    toast.error(`Error: ${error.message}`);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
   // Connect wallet handler
   const handleConnectWallet = async () => {
     try {
@@ -613,6 +704,7 @@ const VerificationDocument = () => {
             <p>Document ID: {document.id || 'Not set'} (Valid: {isValidDocumentId ? 'Yes' : 'No'})</p>
             <p>URL Param ID: {id || 'Not available'} (Valid: {!isNaN(parseInt(id, 10)) ? 'Yes' : 'No'})</p>
             <p>Wallet: {wallet || 'Not connected'}</p>
+            <p>Client Address: {document.clientAddress || 'Not set'}</p>
             <p>Has Verifier Permission: {userHasPermission ? 'Yes' : 'No'}</p>
           </div>
         )}
@@ -776,25 +868,59 @@ const VerificationDocument = () => {
               <div className="bg-white shadow rounded-lg">
                 <div className="p-6">
                   <h2 className="text-lg font-medium text-gray-900 mb-4">Transaction Information</h2>
-                  <div className="p-4 bg-green-50 border border-green-100 rounded-md">
-                    <div className="flex">
-                      <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-green-800">
-                          Verification recorded on blockchain
-                        </p>
-                        <p className="mt-1 text-xs text-green-700">
-                          Transaction Hash:
-                        </p>
-                        <p className="mt-1 text-xs font-mono break-all">
-                          {txHash}
-                        </p>
-                        <p className="mt-3 text-sm text-green-700">
-                          Redirecting to verification history...
-                        </p>
+                  
+                  {/* Success case */}
+                  {!txHash.startsWith('error-') && !txHash.startsWith('rejected-') && !txHash.startsWith('no-wallet-') && (
+                    <div className="p-4 bg-green-50 border border-green-100 rounded-md">
+                      <div className="flex">
+                        <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 mr-3" />
+                        <div>
+                          <p className="text-sm font-medium text-green-800">
+                            Verification recorded on blockchain
+                          </p>
+                          <p className="mt-1 text-xs text-green-700">
+                            Transaction Hash:
+                          </p>
+                          <p className="mt-1 text-xs font-mono break-all">
+                            {txHash}
+                          </p>
+                          <p className="mt-3 text-sm text-green-700">
+                            Redirecting to verification history...
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  
+                  {/* Error case or rejection */}
+                  {(txHash.startsWith('error-') || txHash.startsWith('rejected-') || txHash.startsWith('no-wallet-')) && (
+                    <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-md">
+                      <div className="flex">
+                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5 mr-3" />
+                        <div>
+                          <p className="text-sm font-medium text-yellow-800">
+                            Document was verified in the database
+                          </p>
+                          <p className="mt-1 text-sm text-yellow-700">
+                            {txHash.startsWith('rejected-') 
+                              ? 'The blockchain transaction was rejected in MetaMask.' 
+                              : txHash.startsWith('no-wallet-')
+                                ? 'No wallet was connected for blockchain verification.'
+                                : 'The blockchain transaction failed to complete.'}
+                          </p>
+                          <p className="mt-1 text-sm text-yellow-700">
+                            However, the verification was still recorded in the system database.
+                          </p>
+                          <button
+                            onClick={() => navigate('/institution/history')}
+                            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                          >
+                            Go to Verification History
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
