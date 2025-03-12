@@ -120,135 +120,83 @@ const VerificationHistory = () => {
   };
 
   // Load verification history from backend
-  const loadVerificationHistory = async () => {
-    setLoading(true);
-    setError(null);
+  // Updated filter logic in loadVerificationHistory function within VerificationHistory.jsx
+
+const loadVerificationHistory = async () => {
+  setLoading(true);
+  setError(null);
+  
+  try {
+    // Connect wallet if needed
+    if (!wallet) {
+      try {
+        await connectWallet();
+      } catch (walletError) {
+        console.warn("Wallet connection error:", walletError);
+        // Continue anyway to load history
+      }
+    }
     
-    try {
-      // Connect wallet if needed
-      if (!wallet) {
-        try {
-          await connectWallet();
-        } catch (walletError) {
-          console.warn("Wallet connection error:", walletError);
-          // Continue anyway to load history
-        }
+    const token = AuthService.getToken();
+    
+    if (!token) {
+      throw new Error("Authentication token not found. Please log in again.");
+    }
+    
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    
+    console.log("Fetching verification history from:", `${backendUrl}/documents/`);
+    
+    // Get all documents
+    const response = await axios.get(`${backendUrl}/documents/`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
       }
-      
-      const token = AuthService.getToken();
-      
-      if (!token) {
-        throw new Error("Authentication token not found. Please log in again.");
-      }
-      
-      const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      
-      console.log("Fetching verification history from:", `${backendUrl}/documents/`);
-      
-      // Get all documents
-      const response = await axios.get(`${backendUrl}/documents/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+    });
+    
+    console.log("Documents response:", response.data);
+    
+    // Debug document structure
+    if (Array.isArray(response.data) && response.data.length > 0) {
+      inspectDocumentStructure(response.data);
+    }
+    
+    if (Array.isArray(response.data)) {
+      // FIX: Use case-insensitive comparison and check for various status formats
+      const verifiedDocuments = response.data.filter(doc => {
+        if (!doc || typeof doc !== 'object') return false;
+        
+        const status = String(doc.status || '').toLowerCase();
+        
+        // Check for any status containing 'verif' or 'reject' substrings
+        return status.includes('verif') || status.includes('reject');
       });
       
-      console.log("Documents response:", response.data);
+      console.log("Verified/rejected documents found:", verifiedDocuments.length);
+      console.log("Sample filtered documents:", verifiedDocuments.slice(0, 2));
       
-      // Debug document structure
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        inspectDocumentStructure(response.data);
-      }
+      // Process the documents to add calculated fields
+      const historyItems = verifiedDocuments.map(doc => ({
+        id: doc.id,
+        clientName: doc.user?.username || (doc.user ? `User ${doc.user}` : 'Unknown Client'),
+        documentType: doc.document_type,
+        verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
+        verifiedBy: doc.verified_by?.username || 'Current User',
+        // FIX: Determine status based on case-insensitive includes
+        status: String(doc.status || '').toLowerCase().includes('verif') ? 'approved' : 'rejected',
+        notes: doc.notes || '',
+        documentId: doc.id,
+        timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
+        documentHash: doc.ipfs_hash
+      }));
       
-      if (Array.isArray(response.data)) {
-        // Improved filtering logic to match actual status values
-        // Check various potential status field formats
-        const verifiedDocuments = response.data.filter(doc => {
-          // Check for various formats of status field
-          const status = doc.status || '';
-          return status === 'Verified' || 
-                 status === 'verified' || 
-                 status === 'Rejected' || 
-                 status === 'rejected' ||
-                 // Also check if status might be in a nested property
-                 doc.status_info?.status === 'Verified' ||
-                 doc.status_info?.status === 'Rejected';
-        });
-        
-        console.log("Verified/rejected documents found:", verifiedDocuments.length);
-        console.log("Sample document structure:", verifiedDocuments.length > 0 ? JSON.stringify(verifiedDocuments[0]).substring(0, 200) : "No documents");
-        
-        // Process the documents to add calculated fields
-        const historyItems = verifiedDocuments.map(doc => ({
-          id: doc.id,
-          clientName: doc.user?.username || (doc.user ? `User ${doc.user}` : 'Unknown Client'),
-          documentType: doc.document_type,
-          verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
-          verifiedBy: doc.verified_by?.username || 'Current User',
-          status: (doc.status || '').toLowerCase().includes('verif') ? 'approved' : 'rejected',
-          notes: doc.notes || '',
-          documentId: doc.id,
-          timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
-          documentHash: doc.ipfs_hash
-        }));
-        
-        setVerificationHistory(historyItems);
-      } else {
-        console.error("Unexpected response format:", response.data);
-        
-        // In development, use mock data
-        if (process.env.NODE_ENV === 'development') {
-          console.log("Using mock data in development mode");
-          const mockHistory = [
-            {
-              id: 1,
-              clientName: 'John Doe',
-              documentType: 'passport',
-              verificationDate: '2025-03-01',
-              verifiedBy: 'Sarah Johnson',
-              status: 'approved',
-              notes: 'All requirements met',
-              documentId: '1',
-              timeElapsed: '2 days ago',
-              documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
-            },
-            {
-              id: 2,
-              clientName: 'Jane Smith',
-              documentType: 'drivers_license',
-              verificationDate: '2025-02-28',
-              verifiedBy: 'Mike Wilson',
-              status: 'rejected',
-              notes: 'Document expired',
-              documentId: '2',
-              timeElapsed: '3 days ago',
-              documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
-            },
-            {
-              id: 3,
-              clientName: 'Robert Brown',
-              documentType: 'utility_bill',
-              verificationDate: '2025-02-27',
-              verifiedBy: 'Current User',
-              status: 'approved',
-              notes: 'Valid document',
-              documentId: '3',
-              timeElapsed: '4 days ago',
-              documentHash: 'QmZb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDZZZ'
-            }
-          ];
-          
-          setVerificationHistory(mockHistory);
-        } else {
-          throw new Error("Unexpected response format");
-        }
-      }
-    } catch (err) {
-      console.error("Error loading verification history:", err);
-      setError("Failed to load verification history. Please try again later.");
+      setVerificationHistory(historyItems);
+    } else {
+      console.error("Unexpected response format:", response.data);
       
-      // In development, use mock data if backend request fails
+      // In development, use mock data
       if (process.env.NODE_ENV === 'development') {
-        console.log("Using mock data in development mode due to error");
+        console.log("Using mock data in development mode");
         const mockHistory = [
           {
             id: 1,
@@ -273,15 +221,66 @@ const VerificationHistory = () => {
             documentId: '2',
             timeElapsed: '3 days ago',
             documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
+          },
+          {
+            id: 3,
+            clientName: 'Robert Brown',
+            documentType: 'utility_bill',
+            verificationDate: '2025-02-27',
+            verifiedBy: 'Current User',
+            status: 'approved',
+            notes: 'Valid document',
+            documentId: '3',
+            timeElapsed: '4 days ago',
+            documentHash: 'QmZb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDZZZ'
           }
         ];
         
         setVerificationHistory(mockHistory);
+      } else {
+        throw new Error("Unexpected response format");
       }
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err) {
+    console.error("Error loading verification history:", err);
+    setError("Failed to load verification history. Please try again later.");
+    
+    // In development, use mock data if backend request fails
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Using mock data in development mode due to error");
+      const mockHistory = [
+        {
+          id: 1,
+          clientName: 'John Doe',
+          documentType: 'passport',
+          verificationDate: '2025-03-01',
+          verifiedBy: 'Sarah Johnson',
+          status: 'approved',
+          notes: 'All requirements met',
+          documentId: '1',
+          timeElapsed: '2 days ago',
+          documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
+        },
+        {
+          id: 2,
+          clientName: 'Jane Smith',
+          documentType: 'drivers_license',
+          verificationDate: '2025-02-28',
+          verifiedBy: 'Mike Wilson',
+          status: 'rejected',
+          notes: 'Document expired',
+          documentId: '2',
+          timeElapsed: '3 days ago',
+          documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
+        }
+      ];
+      
+      setVerificationHistory(mockHistory);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Calculate time elapsed since verification
   const calculateTimeElapsed = (timestamp) => {

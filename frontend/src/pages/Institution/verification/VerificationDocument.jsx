@@ -512,6 +512,8 @@ useEffect(() => {
  // Updated handleVerification function with status capitalization fix
 // From src/pages/Institution/verification/VerificationDocument.jsx
 
+// Updated handleVerification function in VerificationDocument.jsx
+
 const handleVerification = async (action) => {
   // Basic validation
   if (action === 'approve' && !areAllRequirementsMet) {
@@ -543,6 +545,7 @@ const handleVerification = async (action) => {
 
     // Proceed with backend verification first
     const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    let backendSuccess = false;
     try {
       const token = AuthService.getToken();
       if (!token) {
@@ -560,7 +563,7 @@ const handleVerification = async (action) => {
       });
       
       console.log("Backend verification response:", response.data);
-      
+      backendSuccess = true;
       toast.success("Document status updated in database", { id: processToastId });
     } catch (backendError) {
       console.error("Backend verification error:", backendError);
@@ -603,24 +606,57 @@ const handleVerification = async (action) => {
         
         toast.success("Verification completed on blockchain", { id: processToastId });
         
+        // If we got here with both backend and blockchain success, log this information
+        if (backendSuccess) {
+          console.log("VERIFICATION COMPLETE: Both database and blockchain updated successfully");
+        }
+        
+        // Key fix: Force a refresh of any document lists by setting localStorage flag
+        localStorage.setItem('refresh_history', 'true');
+        
         // Navigate away after a short delay
         setTimeout(() => {
-          // Force refresh history page data when navigating to it
-          localStorage.setItem('refresh_history', 'true');
           navigate('/institution/history');
         }, 2000);
         
       } catch (blockchainError) {
         console.error("Blockchain error:", blockchainError);
         
-        if (blockchainError.code === 4001) {
-          toast.error("Transaction was rejected in your wallet", { id: processToastId });
+        // IMPORTANT: Even if blockchain verification fails, we might have succeeded with the backend
+        // If backend was successful, we should still show success and redirect
+        if (backendSuccess) {
+          toast.success("Document updated in database, but blockchain verification failed", { id: processToastId });
+          
+          // Force a refresh of any document lists
+          localStorage.setItem('refresh_history', 'true');
+          
+          // Navigate away after a short delay
+          setTimeout(() => {
+            navigate('/institution/history');
+          }, 2000);
         } else {
-          toast.error("Blockchain verification failed: " + blockchainError.message, { id: processToastId });
+          if (blockchainError.code === 4001) {
+            toast.error("Transaction was rejected in your wallet", { id: processToastId });
+          } else {
+            toast.error("Blockchain verification failed: " + blockchainError.message, { id: processToastId });
+          }
         }
       }
     } else {
-      toast.error("Wallet not connected. Please connect your wallet first.", { id: processToastId });
+      // If wallet not connected but backend succeeded, still show success
+      if (backendSuccess) {
+        toast.success("Document updated in database (no blockchain verification)", { id: processToastId });
+        
+        // Force a refresh of any document lists
+        localStorage.setItem('refresh_history', 'true');
+        
+        // Navigate away after a short delay
+        setTimeout(() => {
+          navigate('/institution/history');
+        }, 2000);
+      } else {
+        toast.error("Wallet not connected. Please connect your wallet first.", { id: processToastId });
+      }
     }
     
   } catch (error) {
@@ -637,7 +673,7 @@ const handleVerification = async (action) => {
     setIsSubmitting(false);
   }
 };
-  
+
   // Connect wallet handler
   const handleConnectWallet = async () => {
     try {

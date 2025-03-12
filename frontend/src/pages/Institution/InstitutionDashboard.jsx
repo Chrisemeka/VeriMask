@@ -12,7 +12,7 @@ const InstitutionDashboard = () => {
   const { wallet, connectWallet, isVerifier } = useWallet();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Dashboard data state
   const [verificationStats, setVerificationStats] = useState({
     totalClients: 0,
@@ -29,7 +29,7 @@ const InstitutionDashboard = () => {
   useEffect(() => {
     const loadDashboardData = async () => {
       setLoading(true);
-      
+
       try {
         // Try to connect wallet if not already connected
         if (!wallet) {
@@ -40,14 +40,14 @@ const InstitutionDashboard = () => {
             // Continue anyway to load dashboard data
           }
         }
-        
+
         // Load all the dashboard data in parallel
         await Promise.all([
           loadVerificationStats(),
           loadPendingVerifications(),
           loadRecentActivities()
         ]);
-        
+
         setLoading(false);
       } catch (err) {
         console.error("Dashboard loading error:", err);
@@ -55,148 +55,165 @@ const InstitutionDashboard = () => {
         setLoading(false);
       }
     };
-    
+
     loadDashboardData();
   }, [wallet]);
 
   // Load verification statistics
   // Load verification statistics
   // Updated loadVerificationStats function
-// From src/pages/Institution/InstitutionDashboard.jsx
+  // From src/pages/Institution/InstitutionDashboard.jsx
 
-const loadVerificationStats = async () => {
-  try {
-    const token = AuthService.getToken();
-    
-    if (!token) {
-      throw new Error("Authentication token not found. Please log in again.");
-    }
-    
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    
-    // Check for blockchain connection to get real-time stats
-    let blockchainStats = {
-      totalVerified: 0,
-      totalRejected: 0,
-      totalPending: 0
-    };
-    
+  // Updated loadVerificationStats function for InstitutionDashboard.jsx
+
+  const loadVerificationStats = async () => {
     try {
-      if (wallet) {
-        await blockchainService.init();
-        // Could fetch blockchain statistics here if available
+      const token = AuthService.getToken();
+
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in again.");
       }
-    } catch (bcError) {
-      console.warn("Blockchain stats error:", bcError);
-    }
-    
-    // Fetch all documents to calculate statistics
-    const response = await axios.get(`${backendUrl}/documents/`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    if (response.data) {
-      console.log("Stats - Documents response:", response.data);
-      const documents = response.data;
-      
-      // Get current date for today's calculations
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Log document status values to debug
-      const statusValues = new Set(documents.map(doc => doc.status));
-      console.log("Unique status values in documents:", Array.from(statusValues));
-      
-      // Get unique clients count
-      const uniqueClients = new Set(documents.map(doc => {
-        return doc.user?.id || (typeof doc.user === 'number' ? doc.user : null);
-      })).size;
-      
-      // Count pending documents - now case-insensitive matching
-      const pendingCount = documents.filter(doc => {
-        const status = String(doc.status || '').toLowerCase();
-        return status === 'pending' || status.includes('pend');
-      }).length;
-      
-      // Count today's verified documents - case-insensitive
-      const verifiedToday = documents.filter(doc => {
-        // First check if status matches Verified (case-insensitive)
-        const isVerified = String(doc.status || '').toLowerCase() === 'verified' || 
-                           String(doc.status || '').toLowerCase().includes('verif');
-        
-        if (!isVerified || !doc.verification_date) return false;
-        
-        // Then check if verification date is today
-        const verifiedDate = new Date(doc.verification_date);
-        verifiedDate.setHours(0, 0, 0, 0);
-        return verifiedDate.getTime() === today.getTime();
-      }).length;
-      
-      // Count today's rejected documents - case-insensitive
-      const rejectedToday = documents.filter(doc => {
-        // First check if status matches Rejected (case-insensitive)
-        const isRejected = String(doc.status || '').toLowerCase() === 'rejected' || 
-                           String(doc.status || '').toLowerCase().includes('reject');
-        
-        if (!isRejected || !doc.verification_date) return false;
-        
-        // Then check if verification date is today
-        const verifiedDate = new Date(doc.verification_date);
-        verifiedDate.setHours(0, 0, 0, 0);
-        return verifiedDate.getTime() === today.getTime();
-      }).length;
-      
-      console.log("Stats calculation:", {
-        uniqueClients,
-        pendingCount,
-        verifiedToday,
-        rejectedToday
+
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+      // Check for blockchain connection to get real-time stats
+      let blockchainStats = {
+        totalVerified: 0,
+        totalRejected: 0,
+        totalPending: 0
+      };
+
+      try {
+        if (wallet) {
+          await blockchainService.init();
+          // Could fetch blockchain statistics here if available
+        }
+      } catch (bcError) {
+        console.warn("Blockchain stats error:", bcError);
+      }
+
+      // Fetch all documents to calculate statistics
+      const response = await axios.get(`${backendUrl}/documents/`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
+      if (response.data) {
+        console.log("Stats - Documents response:", response.data);
+        const documents = response.data;
+
+        // Get current date for today's calculations
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Log document status values to debug
+        const statusValues = new Set(documents.map(doc =>
+          typeof doc.status === 'string' ? doc.status.toLowerCase() : String(doc.status).toLowerCase()
+        ));
+        console.log("Unique status values in documents:", Array.from(statusValues));
+
+        // Get unique clients count
+        const uniqueClients = new Set(documents.map(doc => {
+          return doc.user?.id || (typeof doc.user === 'number' ? doc.user : null);
+        })).size;
+
+        // Case-insensitive status checking functions
+        const isPending = (doc) => {
+          const status = String(doc.status || '').toLowerCase();
+          return status.includes('pend');
+        };
+
+        const isVerified = (doc) => {
+          const status = String(doc.status || '').toLowerCase();
+          return status.includes('verif');
+        };
+
+        const isRejected = (doc) => {
+          const status = String(doc.status || '').toLowerCase();
+          return status.includes('reject');
+        };
+
+        // Count pending documents - now case-insensitive matching
+        const pendingCount = documents.filter(isPending).length;
+
+        // Count today's verified documents - case-insensitive
+        const verifiedToday = documents.filter(doc => {
+          // First check if status matches Verified (case-insensitive)
+          if (!isVerified(doc) || !doc.verification_date) return false;
+
+          // Then check if verification date is today
+          const verifiedDate = new Date(doc.verification_date);
+          verifiedDate.setHours(0, 0, 0, 0);
+          return verifiedDate.getTime() === today.getTime();
+        }).length;
+
+        // Count today's rejected documents - case-insensitive
+        const rejectedToday = documents.filter(doc => {
+          // First check if status matches Rejected (case-insensitive)
+          if (!isRejected(doc) || !doc.verification_date) return false;
+
+          // Then check if verification date is today
+          const verifiedDate = new Date(doc.verification_date);
+          verifiedDate.setHours(0, 0, 0, 0);
+          return verifiedDate.getTime() === today.getTime();
+        }).length;
+
+        // Count total verified and rejected for debugging
+        const totalVerified = documents.filter(isVerified).length;
+        const totalRejected = documents.filter(isRejected).length;
+
+        console.log("Stats calculation:", {
+          uniqueClients,
+          pendingCount,
+          verifiedToday,
+          rejectedToday,
+          totalVerified,
+          totalRejected
+        });
+
+        setVerificationStats({
+          totalClients: uniqueClients || 0,
+          pendingVerifications: pendingCount || 0,
+          completedToday: verifiedToday || 0,
+          rejectedToday: rejectedToday || 0
+        });
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error) {
+      console.error("Stats loading error:", error);
+
+      // Fall back to mock data in case of error
       setVerificationStats({
-        totalClients: uniqueClients || 0,
-        pendingVerifications: pendingCount || 0,
-        completedToday: verifiedToday || 0,
-        rejectedToday: rejectedToday || 0
+        totalClients: 15,
+        pendingVerifications: 5,
+        completedToday: 3,
+        rejectedToday: 1
       });
-    } else {
-      throw new Error("Invalid response format");
     }
-  } catch (error) {
-    console.error("Stats loading error:", error);
-    
-    // Fall back to mock data in case of error
-    setVerificationStats({
-      totalClients: 15,
-      pendingVerifications: 5,
-      completedToday: 3,
-      rejectedToday: 1
-    });
-  }
-};
+  };
 
   // Load pending verifications
   const loadPendingVerifications = async () => {
     try {
       const token = AuthService.getToken();
-      
+
       if (!token) {
         throw new Error("Authentication token not found");
       }
-      
+
       const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      
+
       // Get all documents and filter for pending ones
       const response = await axios.get(`${backendUrl}/documents/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       if (response.data) {
         // Filter for pending documents
         const pendingDocuments = response.data
           .filter(doc => doc.status === 'Pending')
           .sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
-        
+
         // Process only the first 3 items for dashboard
         const pendingDocs = pendingDocuments.slice(0, 3).map(doc => ({
           id: doc.id,
@@ -205,14 +222,14 @@ const loadVerificationStats = async () => {
           submittedDate: new Date(doc.upload_date).toLocaleDateString(),
           priority: calculatePriority(doc.upload_date, doc.document_type)
         }));
-        
+
         setPendingVerifications(pendingDocs);
       } else {
         throw new Error("Invalid response format");
       }
     } catch (error) {
       console.error("Pending verifications loading error:", error);
-      
+
       // Fall back to mock data
       setPendingVerifications([
         {
@@ -239,13 +256,13 @@ const loadVerificationStats = async () => {
       ]);
     }
   };
-  
+
   // Calculate priority based on time and document type
   const calculatePriority = (uploadDate, documentType) => {
     const uploadTime = new Date(uploadDate);
     const currentTime = new Date();
     const diffInHours = (currentTime - uploadTime) / (1000 * 60 * 60);
-    
+
     if (diffInHours > 48 || documentType === 'passport') {
       return 'high';
     } else if (diffInHours > 24) {
@@ -259,18 +276,18 @@ const loadVerificationStats = async () => {
   const loadRecentActivities = async () => {
     try {
       const token = AuthService.getToken();
-      
+
       if (!token) {
         throw new Error("Authentication token not found");
       }
-      
+
       const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      
+
       // Get all documents for activities
       const response = await axios.get(`${backendUrl}/documents/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       if (response.data) {
         // Sort documents by verification_date or upload_date (most recent first)
         const sortedDocuments = response.data.sort((a, b) => {
@@ -278,17 +295,17 @@ const loadVerificationStats = async () => {
           const dateB = b.verification_date || b.upload_date;
           return new Date(dateB) - new Date(dateA);
         });
-        
+
         // Process the 3 most recent activities
         const activities = sortedDocuments.slice(0, 3).map(doc => {
           let action = 'New Submission';
-          
+
           if (doc.status === 'Verified') {
             action = 'Verification Completed';
           } else if (doc.status === 'Rejected') {
             action = 'Document Rejected';
           }
-          
+
           return {
             id: doc.id,
             action,
@@ -297,14 +314,14 @@ const loadVerificationStats = async () => {
             time: calculateTimeElapsed(doc.verification_date || doc.upload_date)
           };
         });
-        
+
         setRecentActivities(activities);
       } else {
         throw new Error("Invalid response format");
       }
     } catch (error) {
       console.error("Recent activities loading error:", error);
-      
+
       // Fall back to mock data
       setRecentActivities([
         {
@@ -331,19 +348,19 @@ const loadVerificationStats = async () => {
       ]);
     }
   };
-  
+
   // Calculate time elapsed since event
   const calculateTimeElapsed = (timestamp) => {
     if (!timestamp) return 'Unknown';
-    
+
     const eventTime = new Date(timestamp);
     const currentTime = new Date();
     const diffInMs = currentTime - eventTime;
-    
+
     // Convert to appropriate units
     const diffInHours = diffInMs / (1000 * 60 * 60);
     const diffInDays = diffInHours / 24;
-    
+
     if (diffInHours < 1) {
       return 'Less than an hour ago';
     } else if (diffInHours < 24) {
@@ -398,7 +415,7 @@ const loadVerificationStats = async () => {
     try {
       await connectWallet();
       toast.success("Wallet connected successfully");
-      
+
       // Reload dashboard data
       await Promise.all([
         loadVerificationStats(),
@@ -452,7 +469,7 @@ const loadVerificationStats = async () => {
             Refresh
           </button>
         </div>
-        
+
         {/* Wallet Connection Status */}
         {!wallet && (
           <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 p-4">
@@ -476,7 +493,7 @@ const loadVerificationStats = async () => {
             </div>
           </div>
         )}
-        
+
         {/* Stats Overview */}
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-white overflow-hidden shadow rounded-lg">
@@ -569,7 +586,7 @@ const loadVerificationStats = async () => {
           <div className="bg-white shadow rounded-lg">
             <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
               <h2 className="text-lg font-medium text-gray-900">Pending Verifications</h2>
-              <button 
+              <button
                 onClick={handleViewAllPending}
                 className="text-sm text-blue-600 hover:text-blue-500"
               >
@@ -599,7 +616,7 @@ const loadVerificationStats = async () => {
                           <p className="ml-2 text-sm text-gray-500">• {verification.submittedDate}</p>
                         </div>
                       </div>
-                      <button 
+                      <button
                         onClick={() => handleVerifyDocument(verification.id)}
                         className="ml-4 flex-shrink-0 text-sm text-blue-600 hover:text-blue-500"
                       >
@@ -616,7 +633,7 @@ const loadVerificationStats = async () => {
           <div className="bg-white shadow rounded-lg">
             <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
               <h2 className="text-lg font-medium text-gray-900">Recent Activity</h2>
-              <button 
+              <button
                 onClick={handleViewAllHistory}
                 className="text-sm text-blue-600 hover:text-blue-500"
               >

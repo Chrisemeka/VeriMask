@@ -19,9 +19,15 @@ const PendingVerification = () => {
 
   // Initialize and load data when component mounts
   useEffect(() => {
-    loadPendingDocuments();
-  }, [wallet]);
-
+    // Check if dashboard needs refresh
+    const needsRefresh = localStorage.getItem('refresh_history') === 'true';
+    if (needsRefresh) {
+      console.log("Dashboard refresh triggered by localStorage flag");
+      loadPendingDocuments();
+      // Clear the flag after refreshing
+      localStorage.removeItem('refresh_history');
+    }
+  }, []);  // Empty dependency array ensures it only runs once on mount
   // Load pending documents from backend
   // Update PendingVerification.jsx to load data correctly
 
