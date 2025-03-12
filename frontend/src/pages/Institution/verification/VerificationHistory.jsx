@@ -22,8 +22,102 @@ const VerificationHistory = () => {
 
   // Load verification history on component mount
   useEffect(() => {
+    // Check if we should refresh data (set by verification page)
+    const shouldRefresh = localStorage.getItem('refresh_history') === 'true';
+    
+    // Normal loading on component mount
     loadVerificationHistory();
+    
+    // If we came from verification page, trigger a second refresh after a short delay
+    if (shouldRefresh) {
+      // Clear the flag immediately to avoid multiple refreshes
+      localStorage.removeItem('refresh_history');
+      
+      // Add a delayed refresh to ensure backend has fully updated
+      const timer = setTimeout(() => {
+        console.log("Performing delayed refresh of verification history");
+        loadVerificationHistory();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+    
+    // Set up periodic refresh
+    const interval = setInterval(() => {
+      console.log("Auto-refreshing verification history");
+      loadVerificationHistory();
+    }, 30000); // 30 seconds
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(interval);
   }, [wallet]);
+
+  // Helper function to inspect document structure
+  const inspectDocumentStructure = (documents) => {
+    if (!Array.isArray(documents) || documents.length === 0) {
+      console.log("No documents to inspect");
+      return;
+    }
+    
+    // Get a sample document
+    const sampleDoc = documents[0];
+    
+    // Log the keys in the document
+    console.log("Document structure keys:", Object.keys(sampleDoc));
+    
+    // Check specifically for status field
+    console.log("Status field value:", sampleDoc.status);
+    console.log("Status field type:", typeof sampleDoc.status);
+    
+    // Check various nested paths for status
+    const possibleStatusPaths = [
+      'status',
+      'doc_status',
+      'document_status',
+      'verification.status',
+      'verification_status',
+      'meta.status',
+      'state',
+      'document_state'
+    ];
+    
+    console.log("Checking for status in different paths:");
+    possibleStatusPaths.forEach(path => {
+      const parts = path.split('.');
+      let value = sampleDoc;
+      
+      // Navigate nested path
+      for (const part of parts) {
+        value = value?.[part];
+        if (value === undefined) break;
+      }
+      
+      console.log(`  ${path}: ${value !== undefined ? value : 'not found'}`);
+    });
+    
+    // Check for verified_by field
+    if (sampleDoc.verified_by) {
+      console.log("verified_by structure:", 
+        typeof sampleDoc.verified_by === 'object' ? 
+        Object.keys(sampleDoc.verified_by) : 
+        sampleDoc.verified_by);
+    }
+    
+    // Look at actual date fields
+    if (sampleDoc.verification_date) {
+      console.log("verification_date:", sampleDoc.verification_date);
+      console.log("verification_date converted:", new Date(sampleDoc.verification_date).toLocaleString());
+    }
+    
+    // Count all document status values 
+    const statusCounts = documents.reduce((acc, doc) => {
+      const status = String(doc.status || '').toLowerCase();
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log("Status value counts:", statusCounts);
+  };
 
   // Load verification history from backend
   const loadVerificationHistory = async () => {
@@ -60,22 +154,37 @@ const VerificationHistory = () => {
       
       console.log("Documents response:", response.data);
       
+      // Debug document structure
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        inspectDocumentStructure(response.data);
+      }
+      
       if (Array.isArray(response.data)) {
-        // Filter for documents that have been verified or rejected
-        const verifiedDocuments = response.data.filter(doc => 
-          doc.status === 'Verified' || doc.status === 'Rejected'
-        );
+        // Improved filtering logic to match actual status values
+        // Check various potential status field formats
+        const verifiedDocuments = response.data.filter(doc => {
+          // Check for various formats of status field
+          const status = doc.status || '';
+          return status === 'Verified' || 
+                 status === 'verified' || 
+                 status === 'Rejected' || 
+                 status === 'rejected' ||
+                 // Also check if status might be in a nested property
+                 doc.status_info?.status === 'Verified' ||
+                 doc.status_info?.status === 'Rejected';
+        });
         
         console.log("Verified/rejected documents found:", verifiedDocuments.length);
+        console.log("Sample document structure:", verifiedDocuments.length > 0 ? JSON.stringify(verifiedDocuments[0]).substring(0, 200) : "No documents");
         
         // Process the documents to add calculated fields
         const historyItems = verifiedDocuments.map(doc => ({
           id: doc.id,
-          clientName: doc.user?.username || 'Unknown Client',
+          clientName: doc.user?.username || (doc.user ? `User ${doc.user}` : 'Unknown Client'),
           documentType: doc.document_type,
           verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
           verifiedBy: doc.verified_by?.username || 'Current User',
-          status: doc.status === 'Verified' ? 'approved' : 'rejected',
+          status: (doc.status || '').toLowerCase().includes('verif') ? 'approved' : 'rejected',
           notes: doc.notes || '',
           documentId: doc.id,
           timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),

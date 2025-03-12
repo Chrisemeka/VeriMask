@@ -61,87 +61,119 @@ const InstitutionDashboard = () => {
 
   // Load verification statistics
   // Load verification statistics
-  const loadVerificationStats = async () => {
-    try {
-      const token = AuthService.getToken();
-      
-      if (!token) {
-        throw new Error("Authentication token not found. Please log in again.");
-      }
-      
-      const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      
-      // Check for blockchain connection to get real-time stats
-      let blockchainStats = {
-        totalVerified: 0,
-        totalRejected: 0,
-        totalPending: 0
-      };
-      
-      try {
-        if (wallet) {
-          await blockchainService.init();
-          // Could fetch blockchain statistics here if available
-        }
-      } catch (bcError) {
-        console.warn("Blockchain stats error:", bcError);
-      }
-      
-      // Fetch all documents to calculate statistics
-      const response = await axios.get(`${backendUrl}/documents/`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.data) {
-        const documents = response.data;
-        
-        // Get current date for today's calculations
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        // Get unique clients count
-        const uniqueClients = new Set(documents.map(doc => doc.user?.id)).size;
-        
-        // Count pending documents
-        const pendingCount = documents.filter(doc => doc.status === 'Pending').length;
-        
-        // Count today's verified documents
-        const verifiedToday = documents.filter(doc => {
-          if (doc.status !== 'Verified' || !doc.verification_date) return false;
-          const verifiedDate = new Date(doc.verification_date);
-          verifiedDate.setHours(0, 0, 0, 0);
-          return verifiedDate.getTime() === today.getTime();
-        }).length;
-        
-        // Count today's rejected documents
-        const rejectedToday = documents.filter(doc => {
-          if (doc.status !== 'Rejected' || !doc.verification_date) return false;
-          const verifiedDate = new Date(doc.verification_date);
-          verifiedDate.setHours(0, 0, 0, 0);
-          return verifiedDate.getTime() === today.getTime();
-        }).length;
-        
-        setVerificationStats({
-          totalClients: uniqueClients || 0,
-          pendingVerifications: pendingCount || 0,
-          completedToday: verifiedToday || 0,
-          rejectedToday: rejectedToday || 0
-        });
-      } else {
-        throw new Error("Invalid response format");
-      }
-    } catch (error) {
-      console.error("Stats loading error:", error);
-      
-      // Fall back to mock data in case of error
-      setVerificationStats({
-        totalClients: 15,
-        pendingVerifications: 5,
-        completedToday: 3,
-        rejectedToday: 1
-      });
+  // Updated loadVerificationStats function
+// From src/pages/Institution/InstitutionDashboard.jsx
+
+const loadVerificationStats = async () => {
+  try {
+    const token = AuthService.getToken();
+    
+    if (!token) {
+      throw new Error("Authentication token not found. Please log in again.");
     }
-  };
+    
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    
+    // Check for blockchain connection to get real-time stats
+    let blockchainStats = {
+      totalVerified: 0,
+      totalRejected: 0,
+      totalPending: 0
+    };
+    
+    try {
+      if (wallet) {
+        await blockchainService.init();
+        // Could fetch blockchain statistics here if available
+      }
+    } catch (bcError) {
+      console.warn("Blockchain stats error:", bcError);
+    }
+    
+    // Fetch all documents to calculate statistics
+    const response = await axios.get(`${backendUrl}/documents/`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.data) {
+      console.log("Stats - Documents response:", response.data);
+      const documents = response.data;
+      
+      // Get current date for today's calculations
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Log document status values to debug
+      const statusValues = new Set(documents.map(doc => doc.status));
+      console.log("Unique status values in documents:", Array.from(statusValues));
+      
+      // Get unique clients count
+      const uniqueClients = new Set(documents.map(doc => {
+        return doc.user?.id || (typeof doc.user === 'number' ? doc.user : null);
+      })).size;
+      
+      // Count pending documents - now case-insensitive matching
+      const pendingCount = documents.filter(doc => {
+        const status = String(doc.status || '').toLowerCase();
+        return status === 'pending' || status.includes('pend');
+      }).length;
+      
+      // Count today's verified documents - case-insensitive
+      const verifiedToday = documents.filter(doc => {
+        // First check if status matches Verified (case-insensitive)
+        const isVerified = String(doc.status || '').toLowerCase() === 'verified' || 
+                           String(doc.status || '').toLowerCase().includes('verif');
+        
+        if (!isVerified || !doc.verification_date) return false;
+        
+        // Then check if verification date is today
+        const verifiedDate = new Date(doc.verification_date);
+        verifiedDate.setHours(0, 0, 0, 0);
+        return verifiedDate.getTime() === today.getTime();
+      }).length;
+      
+      // Count today's rejected documents - case-insensitive
+      const rejectedToday = documents.filter(doc => {
+        // First check if status matches Rejected (case-insensitive)
+        const isRejected = String(doc.status || '').toLowerCase() === 'rejected' || 
+                           String(doc.status || '').toLowerCase().includes('reject');
+        
+        if (!isRejected || !doc.verification_date) return false;
+        
+        // Then check if verification date is today
+        const verifiedDate = new Date(doc.verification_date);
+        verifiedDate.setHours(0, 0, 0, 0);
+        return verifiedDate.getTime() === today.getTime();
+      }).length;
+      
+      console.log("Stats calculation:", {
+        uniqueClients,
+        pendingCount,
+        verifiedToday,
+        rejectedToday
+      });
+      
+      setVerificationStats({
+        totalClients: uniqueClients || 0,
+        pendingVerifications: pendingCount || 0,
+        completedToday: verifiedToday || 0,
+        rejectedToday: rejectedToday || 0
+      });
+    } else {
+      throw new Error("Invalid response format");
+    }
+  } catch (error) {
+    console.error("Stats loading error:", error);
+    
+    // Fall back to mock data in case of error
+    setVerificationStats({
+      totalClients: 15,
+      pendingVerifications: 5,
+      completedToday: 3,
+      rejectedToday: 1
+    });
+  }
+};
 
   // Load pending verifications
   const loadPendingVerifications = async () => {

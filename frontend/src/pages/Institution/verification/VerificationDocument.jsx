@@ -509,7 +509,9 @@ useEffect(() => {
   const areAllRequirementsMet = document.requirements.every(req => req.checked);
   
   // Handle verification (approve/reject)
- // Update the handleVerification function in VerificationDocument.jsx
+ // Updated handleVerification function with status capitalization fix
+// From src/pages/Institution/verification/VerificationDocument.jsx
+
 const handleVerification = async (action) => {
   // Basic validation
   if (action === 'approve' && !areAllRequirementsMet) {
@@ -525,7 +527,8 @@ const handleVerification = async (action) => {
   setIsSubmitting(true);
   
   try {
-    // Determine status based on action
+    // Determine status based on action - IMPORTANT: Using proper capitalization
+    // Make sure status matches exactly what backend expects
     const status = action === 'approve' ? 'Verified' : 'Rejected';
     
     // Update UI immediately for better user experience
@@ -547,14 +550,16 @@ const handleVerification = async (action) => {
       }
       
       // Update document status in backend
-      await axios.post(`${backendUrl}/documents/${document.id}/verify/`, {
-        status: status,
+      const response = await axios.post(`${backendUrl}/documents/${document.id}/verify/`, {
+        status: status,  // Using capitalized status value
         notes: verificationNotes
       }, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
+      
+      console.log("Backend verification response:", response.data);
       
       toast.success("Document status updated in database", { id: processToastId });
     } catch (backendError) {
@@ -589,7 +594,7 @@ const handleVerification = async (action) => {
         const tx = await blockchainService.verifyDocument(
           clientAddress,
           documentIndex,
-          status,
+          status,  // Using capitalized status value
           verificationNotes
         );
         
@@ -600,6 +605,8 @@ const handleVerification = async (action) => {
         
         // Navigate away after a short delay
         setTimeout(() => {
+          // Force refresh history page data when navigating to it
+          localStorage.setItem('refresh_history', 'true');
           navigate('/institution/history');
         }, 2000);
         
