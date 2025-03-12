@@ -1,4 +1,4 @@
-// src/components/common/UploadModal.jsx - Improved version
+// src/components/common/UploadModal.jsx
 import React, { useState, useEffect } from 'react';
 import { X, Upload, FileText, CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -7,9 +7,11 @@ import ipfsService from '../../services/IPFSService';
 import blockchainService from '../../services/BlockchainIntegration';
 import AuthService from '../../services/AuthService';
 import { useNavigate } from 'react-router-dom';
+import { useWallet } from '../../contexts/WalletContext';
 
 const UploadModal = ({ isOpen, onClose, onSuccess }) => {
   const navigate = useNavigate();
+  const { wallet, connectWallet } = useWallet();
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState('passport');
   const [uploading, setUploading] = useState(false);
@@ -23,6 +25,7 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
     error: null
   });
   const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [canUploadNew, setCanUploadNew] = useState(false);
 
   const documentTypes = [
     { value: 'passport', label: 'Passport' },
@@ -32,12 +35,29 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
     { value: 'bank_statement', label: 'Bank Statement' }
   ];
 
-  // Check authentication on component mount
+  // Reset state when modal is opened
   useEffect(() => {
     if (isOpen) {
+      resetState();
       checkAuth();
     }
   }, [isOpen]);
+
+  const resetState = () => {
+    setFile(null);
+    setDocumentType('passport');
+    setUploading(false);
+    setUploadState({
+      ipfsUploaded: false,
+      ipfsHash: '',
+      backendUploaded: false,
+      documentId: null,
+      blockchainUploaded: false,
+      txHash: '',
+      error: null
+    });
+    setCanUploadNew(false);
+  };
 
   const checkAuth = () => {
     const user = AuthService.getCurrentUser();
@@ -51,7 +71,7 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
   const handleUploadSuccess = (documentData) => {
     console.log("Upload successful, document data:", documentData);
     
-    // IMPROVED: Store document ID in multiple storage mechanisms for redundancy
+    // Store document ID in multiple storage mechanisms for redundancy
     if (documentData && documentData.id) {
       const docId = String(documentData.id);
       
@@ -62,8 +82,8 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
       console.log(`Stored document ID ${docId} in browser storage`);
     }
     
-    // Close the modal
-    onClose();
+    // Enable uploading a new document
+    setCanUploadNew(true);
     
     // Call the parent's onSuccess handler if provided
     if (onSuccess) {
@@ -79,17 +99,8 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
-  const resetUpload = () => {
-    setFile(null);
-    setUploadState({
-      ipfsUploaded: false,
-      ipfsHash: '',
-      backendUploaded: false,
-      documentId: null,
-      blockchainUploaded: false,
-      txHash: '',
-      error: null
-    });
+  const handleUploadNew = () => {
+    resetState();
   };
 
   const handleLoginRedirect = () => {
@@ -143,193 +154,98 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
     });
 
     try {
-      // Step 1: Upload to IPFS via Pinata
-      const ipfsToast = toast.loading('Uploading to IPFS...');
-      let ipfsHash;
-
-      try {
-        ipfsHash = await ipfsService.uploadFile(file);
-        
-        toast.dismiss(ipfsToast);
-        toast.success('File uploaded to IPFS');
-        
+      // Upload document with type
+      const ipfsHash = await ipfsService.uploadFile(file, documentType);
+      
+      setUploadState(prev => ({
+        ...prev,
+        ipfsUploaded: true,
+        ipfsHash
+      }));
+      
+      toast.success('Document uploaded to IPFS');
+      
+      // Get document ID from the most recent document with this hash
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const response = await axios.get(`${backendUrl}/documents/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      // Find the document with the matching IPFS hash - most recent first
+      let matchingDocs = response.data.filter(doc => doc.ipfs_hash === ipfsHash);
+      // Sort by upload date descending
+      matchingDocs.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
+      const document = matchingDocs[0];
+      
+      if (document) {
+        const docId = String(document.id);
         setUploadState(prev => ({
           ...prev,
-          ipfsUploaded: true,
-          ipfsHash
+          backendUploaded: true,
+          documentId: docId
         }));
         
-        console.log('IPFS upload successful. Hash:', ipfsHash);
-      } catch (ipfsError) {
-        console.error('IPFS upload error:', ipfsError);
-        toast.dismiss(ipfsToast);
-        toast.error('IPFS upload failed: ' + ipfsError.message);
-        throw new Error('IPFS upload failed: ' + ipfsError.message);
-      }
-
-      // Step 2: Save document metadata to the backend
-      const backendToast = toast.loading('Saving document data...');
-      let documentId;
-      
-      try {
-        // Get fresh token
-        const token = AuthService.getToken();
-        if (!token) {
-          throw new Error('Authentication token not found. Please log in again.');
-        }
-
-        // Create form data
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('document_type', documentType);
-        formData.append('ipfs_hash', ipfsHash);
-
-        // Backend API URL from .env
-        const backendUrl = import.meta.env.VITE_BACKEND_URL;
-        const apiUrl = `${backendUrl}/documents/upload/`;
+        // Store document ID in both localStorage and sessionStorage
+        localStorage.setItem('current_verification_id', docId);
+        sessionStorage.setItem('current_verification_id', docId);
         
-        console.log('Uploading to backend API:', apiUrl);
+        toast.success('Document saved successfully');
         
-        // Make the request with proper auth header
-        const response = await axios.post(apiUrl, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        console.log('Backend response:', response.data);
-        
-        // Extract document ID from the response
-        if (response.data && response.data.id) {
-          documentId = response.data.id;
-          console.log('Document ID received:', documentId);
-        } else if (response.data && response.data.document_id) {
-          documentId = response.data.document_id;
-          console.log('Document ID received:', documentId);
-        } else {
-          // Try to extract ID from a nested object if present
-          const extractId = findDocumentIdInObject(response.data);
-          if (extractId) {
-            documentId = extractId;
-            console.log('Document ID extracted from nested response:', documentId);
-          } else {
-            console.warn('No document ID found in response. Response data:', response.data);
-          }
-        }
-        
-        // Update state with document ID if found
-        if (documentId) {
-          // IMPROVED: Convert to string and store in multiple places
-          const docIdStr = String(documentId);
-          localStorage.setItem('current_verification_id', docIdStr);
-          sessionStorage.setItem('current_verification_id', docIdStr);
-          
-          setUploadState(prev => ({
-            ...prev,
-            backendUploaded: true,
-            documentId: docIdStr
-          }));
-        }
-        
-        toast.dismiss(backendToast);
-        toast.success('Document saved successfully' + (documentId ? ` (ID: ${documentId})` : ''));
-        
-        // Step 3: Record on blockchain (if wallet is connected)
+        // Try blockchain upload if wallet is connected
         try {
-          // Check if wallet is connected
-          const walletAddress = await blockchainService.getWalletAddress().catch(() => null);
-          
-          if (walletAddress) {
+          if (wallet) {
             const blockchainToast = toast.loading('Recording on blockchain...');
-            
             const tx = await blockchainService.uploadDocument(ipfsHash, documentType);
-            
-            toast.dismiss(blockchainToast);
-            toast.success('Document recorded on blockchain');
-            
             setUploadState(prev => ({
               ...prev,
               blockchainUploaded: true,
               txHash: tx.transactionHash
             }));
-          } else {
-            console.log('Wallet not connected, skipping blockchain recording');
+            toast.dismiss(blockchainToast);
+            toast.success('Document recorded on blockchain');
           }
         } catch (blockchainError) {
-          console.error('Blockchain upload error:', blockchainError);
+          console.error("Blockchain upload error:", blockchainError);
           toast.error('Document saved but blockchain recording failed');
         }
         
-        // Call onSuccess callback with uploaded document data
-        if (onSuccess) {
-          onSuccess({
-            id: documentId, // Pass the document ID 
-            ipfsHash,
-            documentType,
-            fileName: file.name,
-            fileSize: file.size
-          });
-        }
+        // Call success handler
+        handleUploadSuccess({
+          id: docId,
+          ipfsHash,
+          documentType,
+          fileName: file.name,
+          fileSize: file.size
+        });
+      } else {
+        // If we couldn't find the document in the backend response,
+        // we'll use what we know from the upload
+        setUploadState(prev => ({
+          ...prev,
+          backendUploaded: true,
+          documentId: "unknown-id"
+        }));
         
-      } catch (backendError) {
-        toast.dismiss(backendToast);
-        
-        console.error('Backend upload error:', backendError);
-        if (backendError.response) {
-          console.log('Response status:', backendError.response.status);
-          console.log('Response data:', backendError.response.data);
-        }
-        
-        // Handle authentication errors
-        if (backendError.response?.status === 401) {
-          setIsAuthenticated(false);
-          // Try to refresh token
-          try {
-            const refreshed = await AuthService.refreshToken();
-            if (refreshed) {
-              toast.error('Your session expired. Please try uploading again.');
-            } else {
-              toast.error('Authentication failed. Please log in again.');
-            }
-          } catch (refreshError) {
-            toast.error('Your session has expired. Please log in again.');
-          }
-        } else {
-          toast.error(`Upload failed: ${backendError.response?.data?.detail || backendError.message}`);
-        }
-        
-        throw backendError;
+        handleUploadSuccess({
+          id: "unknown-id",
+          ipfsHash,
+          documentType,
+          fileName: file.name,
+          fileSize: file.size
+        });
       }
-      
     } catch (error) {
+      console.error("IPFS upload error:", error);
       setUploadState(prev => ({
         ...prev,
         error: error.message
       }));
+      toast.error(error.message);
     } finally {
       setUploading(false);
     }
-  };
-
-  // Helper function to recursively search for document ID in the response object
-  const findDocumentIdInObject = (obj) => {
-    if (!obj || typeof obj !== 'object') return null;
-    
-    // Check for common ID field names
-    if (obj.id !== undefined) return obj.id;
-    if (obj.document_id !== undefined) return obj.document_id;
-    if (obj.documentId !== undefined) return obj.documentId;
-    
-    // Search nested objects
-    for (const key in obj) {
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        const result = findDocumentIdInObject(obj[key]);
-        if (result) return result;
-      }
-    }
-    
-    return null;
   };
 
   if (!isOpen) return null;
@@ -374,7 +290,7 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
                 </div>
                 <p className="mt-2 text-sm text-red-600">{uploadState.error}</p>
                 <button
-                  onClick={resetUpload}
+                  onClick={resetState}
                   className="mt-4 w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                 >
                   Try Again
@@ -412,19 +328,26 @@ const UploadModal = ({ isOpen, onClose, onSuccess }) => {
                     Close
                   </button>
                   
+                  <button
+                    onClick={handleUploadNew}
+                    className="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    Upload Another
+                  </button>
+                  
                   {uploadState.ipfsHash && (
                     <a 
                       href={`https://gateway.pinata.cloud/ipfs/${uploadState.ipfsHash}`}
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      className="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 sm:col-span-2"
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       View on IPFS
                     </a>
                   )}
                   
-                  {uploadState.documentId && (
+                  {uploadState.documentId && uploadState.documentId !== "unknown-id" && (
                     <button
                       onClick={() => handleViewVerification(uploadState.documentId)}
                       className="inline-flex justify-center items-center px-4 py-2 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 sm:col-span-2"

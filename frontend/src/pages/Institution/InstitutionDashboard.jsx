@@ -60,6 +60,7 @@ const InstitutionDashboard = () => {
   }, [wallet]);
 
   // Load verification statistics
+  // Load verification statistics
   const loadVerificationStats = async () => {
     try {
       const token = AuthService.getToken();
@@ -86,24 +87,25 @@ const InstitutionDashboard = () => {
         console.warn("Blockchain stats error:", bcError);
       }
       
-      // Instead of using count endpoints, we'll get all documents and calculate counts
-      // This is less efficient but works with your existing API
-      const documentsResponse = await axios.get(`${backendUrl}/documents/`, {
+      // Fetch all documents to calculate statistics
+      const response = await axios.get(`${backendUrl}/documents/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
-      if (documentsResponse.data) {
-        const documents = documentsResponse.data;
+      if (response.data) {
+        const documents = response.data;
         
         // Get current date for today's calculations
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        // Calculate statistics
-        const uniqueClients = new Set(documents.map(doc => doc.user_id)).size;
+        // Get unique clients count
+        const uniqueClients = new Set(documents.map(doc => doc.user?.id)).size;
+        
+        // Count pending documents
         const pendingCount = documents.filter(doc => doc.status === 'Pending').length;
         
-        // Counting today's verifications
+        // Count today's verified documents
         const verifiedToday = documents.filter(doc => {
           if (doc.status !== 'Verified' || !doc.verification_date) return false;
           const verifiedDate = new Date(doc.verification_date);
@@ -111,6 +113,7 @@ const InstitutionDashboard = () => {
           return verifiedDate.getTime() === today.getTime();
         }).length;
         
+        // Count today's rejected documents
         const rejectedToday = documents.filter(doc => {
           if (doc.status !== 'Rejected' || !doc.verification_date) return false;
           const verifiedDate = new Date(doc.verification_date);

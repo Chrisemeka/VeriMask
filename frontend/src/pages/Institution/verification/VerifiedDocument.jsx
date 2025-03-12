@@ -1,27 +1,92 @@
 // src/pages/institution/verifications/VerifiedDocument.jsx
-import React, { useState } from 'react';
-import { Search, Filter, Download, Eye, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, Download, Eye, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
+import axios from 'axios';
+import AuthService from '../../../services/AuthService';
 
 const VerifiedDocument = () => {
-  const [verifiedDocuments, setVerifiedDocuments] = useState([
-    {
-      id: 1,
-      clientName: 'John Doe',
-      documentType: 'Passport',
-      verificationDate: '2024-02-22',
-      verifiedBy: 'Sarah Johnson',
-      status: 'approved'
-    },
-    {
-      id: 2,
-      clientName: 'Jane Smith',
-      documentType: 'Driver\'s License',
-      verificationDate: '2024-02-21',
-      verifiedBy: 'Mike Wilson',
-      status: 'approved'
+  const navigate = useNavigate();
+  const [verifiedDocuments, setVerifiedDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateRange, setDateRange] = useState('all');
+  
+  // Load verified documents on component mount
+  useEffect(() => {
+    loadVerifiedDocuments();
+  }, []);
+  
+  // Function to load verified documents from backend
+  const loadVerifiedDocuments = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const token = AuthService.getToken();
+      
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in again.");
+      }
+      
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      
+      // Get all documents and filter for verified ones
+      const response = await axios.get(`${backendUrl}/documents/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.data) {
+        // Filter for verified documents only
+        const verified = response.data.filter(doc => doc.status === 'Verified');
+        
+        // Process the documents to add calculated fields
+        const verifiedDocs = verified.map(doc => ({
+          id: doc.id,
+          clientName: doc.user?.username || 'Unknown Client',
+          documentType: doc.document_type,
+          verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
+          verifiedBy: doc.verified_by?.username || 'Unknown',
+          status: 'approved'
+        }));
+        
+        setVerifiedDocuments(verifiedDocs);
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (err) {
+      console.error("Error loading verified documents:", err);
+      setError("Failed to load verified documents");
+      
+      // In development, keep using mock data if the API fails
+      if (process.env.NODE_ENV === 'development') {
+        setVerifiedDocuments([
+          {
+            id: 1,
+            clientName: 'John Doe',
+            documentType: 'Passport',
+            verificationDate: '2024-02-22',
+            verifiedBy: 'Sarah Johnson',
+            status: 'approved'
+          },
+          {
+            id: 2,
+            clientName: 'Jane Smith',
+            documentType: 'Driver\'s License',
+            verificationDate: '2024-02-21',
+            verifiedBy: 'Mike Wilson',
+            status: 'approved'
+          }
+        ]);
+      }
+    } finally {
+      setLoading(false);
     }
-  ]);
-
+  };
   return (
     <div className="px-4 sm:px-6 lg:px-8">
       <div className="sm:flex sm:items-center">

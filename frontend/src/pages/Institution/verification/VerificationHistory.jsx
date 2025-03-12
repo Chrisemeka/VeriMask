@@ -22,10 +22,16 @@ const VerificationHistory = () => {
 
   // Load verification history on component mount
   useEffect(() => {
-    const initializeAndLoadData = async () => {
-      setLoading(true);
-      
-      // Try to connect wallet if not already connected
+    loadVerificationHistory();
+  }, [wallet]);
+
+  // Load verification history from backend
+  const loadVerificationHistory = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Connect wallet if needed
       if (!wallet) {
         try {
           await connectWallet();
@@ -35,16 +41,6 @@ const VerificationHistory = () => {
         }
       }
       
-      // Fetch verification history from backend
-      await loadVerificationHistory();
-    };
-    
-    initializeAndLoadData();
-  }, [wallet]);
-
-  // Load verification history from backend
-  const loadVerificationHistory = async () => {
-    try {
       const token = AuthService.getToken();
       
       if (!token) {
@@ -53,69 +49,128 @@ const VerificationHistory = () => {
       
       const backendUrl = import.meta.env.VITE_BACKEND_URL;
       
-      // Get all documents and filter for verified/rejected ones
+      console.log("Fetching verification history from:", `${backendUrl}/documents/`);
+      
+      // Get all documents
       const response = await axios.get(`${backendUrl}/documents/`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      // Filter for documents that have been verified or rejected
-      const verifiedDocuments = response.data.filter(doc => 
-        doc.status === 'Verified' || doc.status === 'Rejected'
-      );
+      console.log("Documents response:", response.data);
       
-      // Process the documents to add calculated fields
-      const historyItems = verifiedDocuments.map(doc => ({
-        id: doc.id,
-        clientName: doc.user?.username || 'Unknown Client',
-        documentType: doc.document_type,
-        verificationDate: new Date(doc.verification_date || doc.upload_date).toLocaleDateString(),
-        verifiedBy: doc.verified_by?.username || 'Unknown Verifier',
-        status: doc.status.toLowerCase() === 'verified' ? 'approved' : doc.status.toLowerCase(),
-        notes: doc.notes || '',
-        documentId: doc.id,
-        timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
-        documentHash: doc.ipfs_hash
-      }));
-      
-      setVerificationHistory(historyItems);
-      setLoading(false);
+      if (Array.isArray(response.data)) {
+        // Filter for documents that have been verified or rejected
+        const verifiedDocuments = response.data.filter(doc => 
+          doc.status === 'Verified' || doc.status === 'Rejected'
+        );
+        
+        console.log("Verified/rejected documents found:", verifiedDocuments.length);
+        
+        // Process the documents to add calculated fields
+        const historyItems = verifiedDocuments.map(doc => ({
+          id: doc.id,
+          clientName: doc.user?.username || 'Unknown Client',
+          documentType: doc.document_type,
+          verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
+          verifiedBy: doc.verified_by?.username || 'Current User',
+          status: doc.status === 'Verified' ? 'approved' : 'rejected',
+          notes: doc.notes || '',
+          documentId: doc.id,
+          timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
+          documentHash: doc.ipfs_hash
+        }));
+        
+        setVerificationHistory(historyItems);
+      } else {
+        console.error("Unexpected response format:", response.data);
+        
+        // In development, use mock data
+        if (process.env.NODE_ENV === 'development') {
+          console.log("Using mock data in development mode");
+          const mockHistory = [
+            {
+              id: 1,
+              clientName: 'John Doe',
+              documentType: 'passport',
+              verificationDate: '2025-03-01',
+              verifiedBy: 'Sarah Johnson',
+              status: 'approved',
+              notes: 'All requirements met',
+              documentId: '1',
+              timeElapsed: '2 days ago',
+              documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
+            },
+            {
+              id: 2,
+              clientName: 'Jane Smith',
+              documentType: 'drivers_license',
+              verificationDate: '2025-02-28',
+              verifiedBy: 'Mike Wilson',
+              status: 'rejected',
+              notes: 'Document expired',
+              documentId: '2',
+              timeElapsed: '3 days ago',
+              documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
+            },
+            {
+              id: 3,
+              clientName: 'Robert Brown',
+              documentType: 'utility_bill',
+              verificationDate: '2025-02-27',
+              verifiedBy: 'Current User',
+              status: 'approved',
+              notes: 'Valid document',
+              documentId: '3',
+              timeElapsed: '4 days ago',
+              documentHash: 'QmZb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDZZZ'
+            }
+          ];
+          
+          setVerificationHistory(mockHistory);
+        } else {
+          throw new Error("Unexpected response format");
+        }
+      }
     } catch (err) {
       console.error("Error loading verification history:", err);
       setError("Failed to load verification history. Please try again later.");
       
       // In development, use mock data if backend request fails
       if (process.env.NODE_ENV === 'development') {
-        console.log("Using mock data in development mode");
+        console.log("Using mock data in development mode due to error");
         const mockHistory = [
           {
             id: 1,
             clientName: 'John Doe',
-            documentType: 'Passport',
+            documentType: 'passport',
             verificationDate: '2025-03-01',
             verifiedBy: 'Sarah Johnson',
             status: 'approved',
             notes: 'All requirements met',
-            documentId: 'PASS-2025-001',
-            timeElapsed: '2 days ago'
+            documentId: '1',
+            timeElapsed: '2 days ago',
+            documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
           },
           {
             id: 2,
             clientName: 'Jane Smith',
-            documentType: 'Driver\'s License',
+            documentType: 'drivers_license',
             verificationDate: '2025-02-28',
             verifiedBy: 'Mike Wilson',
             status: 'rejected',
             notes: 'Document expired',
-            documentId: 'DL-2025-002',
-            timeElapsed: '3 days ago'
+            documentId: '2',
+            timeElapsed: '3 days ago',
+            documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
           }
         ];
         
         setVerificationHistory(mockHistory);
-        setLoading(false);
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -180,7 +235,16 @@ const VerificationHistory = () => {
 
   // View document details
   const handleViewDetails = (id) => {
-    navigate(`/institution/verification/${id}`);
+    try {
+      // Store the document ID for the verification page
+      localStorage.setItem('current_verification_id', id);
+      sessionStorage.setItem('current_verification_id', id);
+      
+      // Navigate to verification page
+      navigate(`/institution/verification/${id}`);
+    } catch (error) {
+      toast.error("Failed to view document details");
+    }
   };
 
   // Export verification history
@@ -196,7 +260,7 @@ const VerificationHistory = () => {
         `"${record.status}"`,
         `"${record.verifiedBy}"`,
         `"${record.verificationDate}"`,
-        `"${record.notes.replace(/"/g, '""')}"`
+        `"${record.notes?.replace(/"/g, '""') || ''}"`
       ].join(','))
     ].join('\n');
     
@@ -216,17 +280,29 @@ const VerificationHistory = () => {
     toast.success('Verification history exported successfully');
   };
 
+  // Refresh data
+  const handleRefresh = () => {
+    toast.promise(
+      loadVerificationHistory(),
+      {
+        loading: 'Refreshing verification history...',
+        success: 'Verification history refreshed',
+        error: 'Failed to refresh verification history'
+      }
+    );
+  };
+
   // Apply filters to verification history
   const filteredHistory = verificationHistory.filter(record => {
-    // Search filter
+    // Apply search filter
     const matchesSearch = filters.search === '' || 
       record.clientName.toLowerCase().includes(filters.search.toLowerCase()) || 
       record.documentType.toLowerCase().includes(filters.search.toLowerCase());
       
-    // Status filter
+    // Apply status filter
     const matchesStatus = filters.status === 'all' || record.status === filters.status;
     
-    // Date range filter
+    // Apply date range filter
     let matchesDateRange = true;
     if (filters.dateRange !== 'all') {
       const recordDate = new Date(record.verificationDate);
@@ -274,7 +350,14 @@ const VerificationHistory = () => {
             Complete history of all document verifications performed by your institution.
           </p>
         </div>
-        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none flex space-x-3">
+          <button 
+            onClick={handleRefresh}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <Clock className="h-5 w-5 mr-2" />
+            Refresh
+          </button>
           <button 
             onClick={handleExport}
             className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
@@ -401,21 +484,3 @@ const VerificationHistory = () => {
 };
 
 export default VerificationHistory;
-
-  // return (
-  //   /* The above code is a snippet of JSX code written in JavaScript React. It represents a section of
-  //   a web page layout, specifically the header section. Here's a breakdown of what the code is
-  //   doing: */
-  //   <div className="px-4 sm:px-6 lg:px-8">
-  //     {/* Header Section */}
-  //     <div className="sm:flex sm:items-center">
-  //       <div className="sm:flex-auto">
-  //         <h1 className="text-xl font-semibold text-gray-900">Verification History</h1>
-  //         <p className="mt-2 text-sm text-gray-700">
-  //           Complete history of all document verifications performed by your institution.
-  //         </p>
-  //       </div>
-  //       <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-  //         <button 
-  //           onClick={handleExport}
-  //           className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-
