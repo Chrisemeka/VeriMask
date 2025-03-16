@@ -16,8 +16,14 @@ const findDocumentIdInAnyFormat = (doc) => {
     return null;
   }
   
-  // 1. Check direct ID fields with multiple possible names
-  const possibleIdFields = ['id', 'document_id', 'documentId', '_id', 'doc_id', 'docId', 'documentID', 'documentIdentifier'];
+  // 1. First check the direct ID field (most reliable)
+  if (doc.id !== undefined && doc.id !== null) {
+    console.log(`Found direct ID:`, doc.id);
+    return String(doc.id);
+  }
+  
+  // 2. Check other possible ID field names
+  const possibleIdFields = ['document_id', 'documentId', '_id', 'doc_id', 'docId', 'documentID', 'documentIdentifier'];
   
   for (const field of possibleIdFields) {
     if (doc[field] !== undefined && doc[field] !== null) {
@@ -26,26 +32,10 @@ const findDocumentIdInAnyFormat = (doc) => {
     }
   }
   
-  // 2. Check for ID in nested objects (one level deep)
-  for (const key in doc) {
-    if (typeof doc[key] === 'object' && doc[key] !== null) {
-      // Check for common container objects that might hold an ID
-      for (const field of possibleIdFields) {
-        if (doc[key][field] !== undefined && doc[key][field] !== null) {
-          console.log(`Found ID in nested field ${key}.${field}:`, doc[key][field]);
-          return String(doc[key][field]);
-        }
-      }
-    }
-  }
-  
-  // 3. Special case: Check if there's a string key in the document that looks like an ID
-  for (const key in doc) {
-    // If the key value is a string that matches an ID pattern (e.g., alphanumeric with possible hyphens)
-    if (typeof doc[key] === 'string' && /^[a-zA-Z0-9_-]+$/.test(doc[key]) && key.toLowerCase().includes('id')) {
-      console.log(`Found potential ID in field ${key}:`, doc[key]);
-      return doc[key];
-    }
+  // 3. Check for blockchain_index field which might be the document ID
+  if (doc.blockchain_index !== undefined && doc.blockchain_index !== null) {
+    console.log(`Using blockchain_index as ID:`, doc.blockchain_index);
+    return String(doc.blockchain_index);
   }
   
   // 4. Extract ID from URL if present
@@ -59,14 +49,11 @@ const findDocumentIdInAnyFormat = (doc) => {
     }
   }
   
-  // 5. Check if the user field is a number, might be the ID in some cases
-  if (doc.user !== undefined && typeof doc.user === 'number') {
-    console.log("Found potential ID in user field:", doc.user);
-    return String(doc.user);
-  }
+  // 5. IMPORTANT: DO NOT use user field as document ID (this was causing the bug)
+  // The user field is the ID of the user who owns the document, not the document itself
   
   // No ID found
-  console.warn("No ID found in document:", JSON.stringify(doc).substring(0, 200) + "...");
+  console.warn("No valid ID found in document:", JSON.stringify(doc).substring(0, 200) + "...");
   return null;
 };
 
@@ -104,14 +91,45 @@ const VerificationDocument = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState('');
   
-  // Fixing the document ID retrieval in VerificationDocument.jsx
+  // Effect to load document when component mounts or document ID changes
+  useEffect(() => {
+    // Clear any existing error state at the start
+    setError(null);
+    
+    const documentId = getDocumentId();
+    
+    // Log the document ID situation for debugging
+    console.log("Document ID resolution:", {
+      fromParams: id,
+      fromQuery: new URLSearchParams(location.search).get('docId'),
+      fromSessionStorage: sessionStorage.getItem('current_verification_id'),
+      fromLocalStorage: localStorage.getItem('current_verification_id'),
+      fromPreviousState: document?.id,
+      fromPathExtraction: window.location.pathname.match(/\/verification\/(\d+)/)?.[1],
+      finalResolvedId: documentId
+    });
+    
+    // If no document ID could be found, show error
+    if (!documentId) {
+      setError("No document ID could be found. Please select a document from the pending list.");
+      setLoading(false);
+      return;
+    }
+    
+    // Store the document ID in both storage mechanisms for redundancy
+    try {
+      localStorage.setItem('current_verification_id', documentId);
+      sessionStorage.setItem('current_verification_id', documentId);
+    } catch (storageError) {
+      console.warn("Failed to store document ID in browser storage:", storageError);
+      // Continue anyway, this is just for redundancy
+    }
+    
+    // Fetch the document with the ID
+    fetchDocument(documentId);
+  }, [id, location.search]);
 
-// A key section that needs modification is the document ID retrieval logic:
-useEffect(() => {
-  // Clear any existing error state at the start
-  setError(null);
-  
-  // IMPROVED DOCUMENT ID RETRIEVAL LOGIC
+  // Improved document ID retrieval logic
   const getDocumentId = () => {
     // Priority 1: URL parameter (from the route)
     if (id) {
@@ -141,13 +159,7 @@ useEffect(() => {
       return localId;
     }
     
-    // Priority 5: Previous document state (as a last resort)
-    if (document && document.id) {
-      console.log("Using document ID from previous state:", document.id);
-      return document.id;
-    }
-    
-    // Priority 6: Extract from URL path as last resort
+    // Priority 5: Extract from URL path as last resort
     const pathMatch = window.location.pathname.match(/\/verification\/(\d+)/);
     if (pathMatch && pathMatch[1]) {
       const pathId = pathMatch[1];
@@ -157,80 +169,8 @@ useEffect(() => {
     
     return null;
   };
-  
-  const documentId = getDocumentId();
-  
-  // Log the document ID situation for debugging
-  console.log("Document ID resolution:", {
-    fromParams: id,
-    fromQuery: new URLSearchParams(location.search).get('docId'),
-    fromSessionStorage: sessionStorage.getItem('current_verification_id'),
-    fromLocalStorage: localStorage.getItem('current_verification_id'),
-    fromPreviousState: document?.id,
-    fromPathExtraction: window.location.pathname.match(/\/verification\/(\d+)/)?.[1],
-    finalResolvedId: documentId
-  });
-  
-  // If no document ID could be found, show error
-  if (!documentId) {
-    setError("No document ID could be found. Please select a document from the pending list.");
-    setLoading(false);
-    return;
-  }
-  
-  // Store the document ID in both storage mechanisms for redundancy
-  try {
-    localStorage.setItem('current_verification_id', documentId);
-    sessionStorage.setItem('current_verification_id', documentId);
-  } catch (storageError) {
-    console.warn("Failed to store document ID in browser storage:", storageError);
-    // Continue anyway, this is just for redundancy
-  }
-  
-  // Fetch the document with the ID
-  fetchDocument(documentId);
-}, [id, location.search]);
 
-  // Enhanced document ID resolution function
-  const getDocumentId = () => {
-    // Priority 1: URL parameter (from the route)
-    if (id) {
-      console.log("Using document ID from URL params:", id);
-      return id;
-    }
-    
-    // Priority 2: URL query parameter
-    const queryParams = new URLSearchParams(location.search);
-    const queryId = queryParams.get('docId');
-    if (queryId) {
-      console.log("Using document ID from URL query params:", queryId);
-      return queryId;
-    }
-    
-    // Priority 3: sessionStorage
-    const sessionId = sessionStorage.getItem('current_verification_id');
-    if (sessionId) {
-      console.log("Using document ID from sessionStorage:", sessionId);
-      return sessionId;
-    }
-    
-    // Priority 4: localStorage
-    const localId = localStorage.getItem('current_verification_id');
-    if (localId) {
-      console.log("Using document ID from localStorage:", localId);
-      return localId;
-    }
-    
-    // Priority 5: Last uploaded document ID (if available)
-    const lastUploadedId = localStorage.getItem('last_uploaded_document_id');
-    if (lastUploadedId) {
-      console.log("Using last uploaded document ID:", lastUploadedId);
-      return lastUploadedId;
-    }
-    
-    return null;
-  };
-
+  // Modified fetchDocument function to handle specific document ID
   const fetchDocument = async (documentId) => {
     setLoading(true);
     setError(null);
@@ -310,38 +250,21 @@ useEffect(() => {
           if (Array.isArray(allDocsResponse.data)) {
             console.log("All documents response:", allDocsResponse.data);
             
-            // Analyze all documents to find IDs
-            console.log("Analyzing document IDs in response...");
-            const allIds = allDocsResponse.data.map(doc => findDocumentIdInAnyFormat(doc));
-            console.log("All extracted IDs:", allIds);
-            
             // Find the document by matching its ID with the requested ID
             const docIdStr = String(documentId);
-            const docIdNumber = parseInt(documentId, 10);
             
             // First try to find the exact document by strictly matching IDs
-            let matchedDoc = allDocsResponse.data.find((doc, index) => {
-              const extractedId = allIds[index];
-              return extractedId === docIdStr || 
-                   extractedId === String(docIdNumber) ||
-                   (extractedId && extractedId.includes(docIdStr));
-            });
-            
-            // If no match, try a broader search including any document property
-            if (!matchedDoc) {
-              console.log("No direct ID match found, searching across all document properties");
-              matchedDoc = allDocsResponse.data.find(doc => {
-                // Convert the entire document to a string and search for the ID
-                const docString = JSON.stringify(doc);
-                return docString.includes(docIdStr);
-              });
-            }
+            let matchedDoc = allDocsResponse.data.find(doc => 
+              String(doc.id) === docIdStr
+            );
             
             if (matchedDoc) {
               console.log("Found matching document:", matchedDoc);
               documentData = matchedDoc;
             } else {
-              console.error("Document not found in list. Available IDs:", allIds);
+              console.error("Document not found in list. Available IDs:", 
+                allDocsResponse.data.map(doc => doc.id)
+              );
               fetchErrors.push("Document not found in document list");
             }
           } else {
@@ -376,59 +299,12 @@ useEffect(() => {
         }
       }
       
-      // Strategy 4: If it's a recently uploaded document, try with a short delay
-      if (!documentData) {
-        const lastUploadTimestamp = localStorage.getItem('last_upload_timestamp');
-        const timeDiff = lastUploadTimestamp ? 
-          (new Date() - new Date(lastUploadTimestamp)) / 1000 : 0;
-        
-        if (lastUploadTimestamp && timeDiff < 60) { // Less than 60 seconds ago
-          console.log("Document was recently uploaded, trying with delay...");
-          
-          try {
-            // Wait for 2 seconds to give backend time to process
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // Try direct endpoint again
-            const response = await axios.get(`${backendUrl}/documents/${documentId}/`, {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            });
-            
-            if (response.data) {
-              console.log("Document fetched successfully after delay");
-              documentData = response.data;
-            }
-          } catch (delayedError) {
-            console.warn("Delayed fetch attempt failed:", delayedError.message);
-            fetchErrors.push(`Delayed fetch: ${delayedError.message}`);
-          }
-        }
-      }
-      
       // Final check to see if we found the document
       if (documentData) {
-        // Extract document ID if not already available
-        if (!documentData.id) {
-          const extractedId = findDocumentIdInAnyFormat(documentData);
-          if (extractedId) {
-            documentData.id = extractedId;
-          }
-        }
-        
         processDocumentData(documentData, documentId);
       } else {
-        // Create a helpful error message based on timing and errors
-        const lastUploadTimestamp = localStorage.getItem('last_upload_timestamp');
-        const timeDiff = lastUploadTimestamp ? 
-          (new Date() - new Date(lastUploadTimestamp)) / 1000 : 0;
-        
-        if (lastUploadTimestamp && timeDiff < 60) { // Less than 60 seconds ago
-          setError(`Document was recently uploaded (${Math.round(timeDiff)} seconds ago) and may not be fully processed in the system yet. Please try again in a moment.`);
-        } else {
-          setError(`Failed to load document with ID ${documentId}. Errors: ${fetchErrors.join('; ')}`);
-        }
+        // Create a helpful error message
+        setError(`Failed to load document with ID ${documentId}. Errors: ${fetchErrors.join('; ')}`);
         setLoading(false);
       }
     } catch (err) {
@@ -438,9 +314,17 @@ useEffect(() => {
     }
   };
 
-  // Process document data
+  // Improved processDocumentData function for more robust handling
   const processDocumentData = (doc, docId) => {
     console.log("Processing document data:", doc);
+    
+    // Ensure we have a valid document ID
+    const documentId = doc.id || docId;
+    if (!documentId) {
+      setError("Document doesn't have a valid ID. Please try another document.");
+      setLoading(false);
+      return;
+    }
     
     // Extract client wallet address from various possible locations
     let clientAddress = '0x0000000000000000000000000000000000000000';
@@ -455,18 +339,14 @@ useEffect(() => {
     
     // Use a hardcoded address if we couldn't find a valid one
     if (clientAddress === '0x0000000000000000000000000000000000000000') {
-      // This is for demo purposes - in production you should ensure valid addresses
       clientAddress = '0x9e1B746457a30C6826f778679Bc2d6AbB9db6DE7';
     }
     
     console.log("Client address resolved to:", clientAddress);
     
-    // Make sure we have a valid document ID
-    const documentId = doc.id || findDocumentIdInAnyFormat(doc) || docId || "48";
-    
     // Process document data with fallbacks for missing fields
     const processedDoc = {
-      id: documentId ? documentId.toString() : '',
+      id: String(documentId),
       clientName: doc.user?.username || 'Unknown Client',
       clientAddress: clientAddress,
       documentType: doc.document_type || 'Unknown Type',
@@ -494,7 +374,7 @@ useEffect(() => {
     
     setLoading(false);
   };
-  
+
   // Handle requirement toggle
   const handleRequirementToggle = (reqId) => {
     setDocument(prev => ({
@@ -508,124 +388,142 @@ useEffect(() => {
   // Check if all requirements are met
   const areAllRequirementsMet = document.requirements.every(req => req.checked);
   
-  // Handle verification (approve/reject)
- // Updated handleVerification function with status capitalization fix
-// From src/pages/Institution/verification/VerificationDocument.jsx
-
-// Updated handleVerification function in VerificationDocument.jsx
-
-const handleVerification = async (action) => {
-  // Basic validation
-  if (action === 'approve' && !areAllRequirementsMet) {
-    toast.error('All requirements must be met before approval');
-    return;
-  }
-  
-  if (!verificationNotes.trim() && action === 'reject') {
-    toast.error('Please provide rejection reason in the notes');
-    return;
-  }
-  
-  setIsSubmitting(true);
-  
-  try {
-    // Determine status based on action - IMPORTANT: Using proper capitalization
-    // Make sure status matches exactly what backend expects
-    const status = action === 'approve' ? 'Verified' : 'Rejected';
-    
-    // Update UI immediately for better user experience
-    setDocument(prev => ({
-      ...prev,
-      status: status,
-      verificationNotes: verificationNotes
-    }));
-    
-    // Toast for overall process
-    const processToastId = toast.loading("Processing verification...");
-
-    // Proceed with backend verification first
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    let backendSuccess = false;
-    try {
-      const token = AuthService.getToken();
-      if (!token) {
-        throw new Error("Authentication token not found");
-      }
-      
-      // Update document status in backend
-      const response = await axios.post(`${backendUrl}/documents/${document.id}/verify/`, {
-        status: status,  // Using capitalized status value
-        notes: verificationNotes
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      console.log("Backend verification response:", response.data);
-      backendSuccess = true;
-      toast.success("Document status updated in database", { id: processToastId });
-    } catch (backendError) {
-      console.error("Backend verification error:", backendError);
-      toast.error("Database update failed, but will try blockchain", { id: processToastId });
+  // Updated handleVerification function for proper ID handling
+  const handleVerification = async (action) => {
+    // Basic validation
+    if (action === 'approve' && !areAllRequirementsMet) {
+      toast.error('All requirements must be met before approval');
+      return;
     }
     
-    // Continue with blockchain verification
-    if (wallet) {
+    if (!verificationNotes.trim() && action === 'reject') {
+      toast.error('Please provide rejection reason in the notes');
+      return;
+    }
+    
+    // Check if we have a valid document ID
+    if (!document.id) {
+      toast.error('Cannot verify document: Missing document ID');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      // Determine status based on action
+      const status = action === 'approve' ? 'Verified' : 'Rejected';
+      
+      // Update UI immediately for better user experience
+      setDocument(prev => ({
+        ...prev,
+        status: status,
+        verificationNotes: verificationNotes
+      }));
+      
+      // Toast for overall process
+      const processToastId = toast.loading("Processing verification...");
+
+      // Proceed with backend verification first
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      let backendSuccess = false;
       try {
-        // Initialize blockchain service
-        await blockchainService.init();
-        
-        toast.loading("Waiting for wallet confirmation...", { id: processToastId });
-        
-        // Use a hardcoded client address for testing
-        // In production, you should use the document.clientAddress
-        const clientAddress = document.clientAddress || "0x9e1B746457a30C6826f778679Bc2d6AbB9db6DE7";
-        
-        // Always use document index 0 for testing
-        // In production, you should get this from the document data
-        const documentIndex = 0;
-        
-        console.log("Blockchain verification parameters:", {
-          clientAddress,
-          documentIndex,
-          status,
-          notes: verificationNotes
-        });
-        
-        // Execute transaction
-        const tx = await blockchainService.verifyDocument(
-          clientAddress,
-          documentIndex,
-          status,  // Using capitalized status value
-          verificationNotes
-        );
-        
-        console.log('Transaction receipt:', tx);
-        setTxHash(tx.transactionHash || tx);
-        
-        toast.success("Verification completed on blockchain", { id: processToastId });
-        
-        // If we got here with both backend and blockchain success, log this information
-        if (backendSuccess) {
-          console.log("VERIFICATION COMPLETE: Both database and blockchain updated successfully");
+        const token = AuthService.getToken();
+        if (!token) {
+          throw new Error("Authentication token not found");
         }
         
-        // Key fix: Force a refresh of any document lists by setting localStorage flag
-        localStorage.setItem('refresh_history', 'true');
+        // Update document status in backend
+        const response = await axios.post(`${backendUrl}/documents/${document.id}/verify/`, {
+          status: status,
+          notes: verificationNotes
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         
-        // Navigate away after a short delay
-        setTimeout(() => {
-          navigate('/institution/history');
-        }, 2000);
-        
-      } catch (blockchainError) {
-        console.error("Blockchain error:", blockchainError);
-        
-        // IMPORTANT: Even if blockchain verification fails, we might have succeeded with the backend
-        // If backend was successful, we should still show success and redirect
+        console.log("Backend verification response:", response.data);
+        backendSuccess = true;
+        toast.success("Document status updated in database", { id: processToastId });
+      } catch (backendError) {
+        console.error("Backend verification error:", backendError);
+        toast.error("Database update failed, but will try blockchain", { id: processToastId });
+      }
+      
+      // Continue with blockchain verification
+      if (wallet) {
+        try {
+          // Initialize blockchain service
+          await blockchainService.init();
+          
+          toast.loading("Waiting for wallet confirmation...", { id: processToastId });
+          
+          // Use the correct client address
+          const clientAddress = document.clientAddress || "0x9e1B746457a30C6826f778679Bc2d6AbB9db6DE7";
+          
+          // Always use document index 0 for testing
+          // In production, you should get this from the document data
+          const documentIndex = 0;
+          
+          console.log("Blockchain verification parameters:", {
+            clientAddress,
+            documentIndex,
+            status,
+            notes: verificationNotes
+          });
+          
+          // Execute transaction
+          const tx = await blockchainService.verifyDocument(
+            clientAddress,
+            documentIndex,
+            status,
+            verificationNotes
+          );
+          
+          console.log('Transaction receipt:', tx);
+          setTxHash(tx.transactionHash || tx);
+          
+          toast.success("Verification completed on blockchain", { id: processToastId });
+          
+          // If we got here with both backend and blockchain success, log this information
+          if (backendSuccess) {
+            console.log("VERIFICATION COMPLETE: Both database and blockchain updated successfully");
+          }
+          
+          // Force a refresh of any document lists
+          localStorage.setItem('refresh_history', 'true');
+          
+          // Navigate away after a short delay
+          setTimeout(() => {
+            navigate('/institution/history');
+          }, 2000);
+          
+        } catch (blockchainError) {
+          console.error("Blockchain error:", blockchainError);
+          
+          // Even if blockchain verification fails, we might have succeeded with the backend
+          if (backendSuccess) {
+            toast.success("Document updated in database, but blockchain verification failed", { id: processToastId });
+            
+            // Force a refresh of any document lists
+            localStorage.setItem('refresh_history', 'true');
+            
+            // Navigate away after a short delay
+            setTimeout(() => {
+              navigate('/institution/history');
+            }, 2000);
+          } else {
+            if (blockchainError.code === 4001) {
+              toast.error("Transaction was rejected in your wallet", { id: processToastId });
+            } else {
+              toast.error("Blockchain verification failed: " + blockchainError.message, { id: processToastId });
+            }
+          }
+        }
+      } else {
+        // If wallet not connected but backend succeeded, still show success
         if (backendSuccess) {
-          toast.success("Document updated in database, but blockchain verification failed", { id: processToastId });
+          toast.success("Document updated in database (no blockchain verification)", { id: processToastId });
           
           // Force a refresh of any document lists
           localStorage.setItem('refresh_history', 'true');
@@ -635,44 +533,24 @@ const handleVerification = async (action) => {
             navigate('/institution/history');
           }, 2000);
         } else {
-          if (blockchainError.code === 4001) {
-            toast.error("Transaction was rejected in your wallet", { id: processToastId });
-          } else {
-            toast.error("Blockchain verification failed: " + blockchainError.message, { id: processToastId });
-          }
+          toast.error("Wallet not connected. Please connect your wallet first.", { id: processToastId });
         }
       }
-    } else {
-      // If wallet not connected but backend succeeded, still show success
-      if (backendSuccess) {
-        toast.success("Document updated in database (no blockchain verification)", { id: processToastId });
-        
-        // Force a refresh of any document lists
-        localStorage.setItem('refresh_history', 'true');
-        
-        // Navigate away after a short delay
-        setTimeout(() => {
-          navigate('/institution/history');
-        }, 2000);
-      } else {
-        toast.error("Wallet not connected. Please connect your wallet first.", { id: processToastId });
-      }
+      
+    } catch (error) {
+      console.error("Verification error:", error);
+      toast.error("Verification process error: " + error.message);
+      
+      // Revert UI state
+      setDocument(prev => ({
+        ...prev,
+        status: 'Pending',
+        verificationNotes: prev.verificationNotes
+      }));
+    } finally {
+      setIsSubmitting(false);
     }
-    
-  } catch (error) {
-    console.error("Verification error:", error);
-    toast.error("Verification process error: " + error.message);
-    
-    // Revert UI state
-    setDocument(prev => ({
-      ...prev,
-      status: 'Pending',
-      verificationNotes: prev.verificationNotes
-    }));
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   // Connect wallet handler
   const handleConnectWallet = async () => {

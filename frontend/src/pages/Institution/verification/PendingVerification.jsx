@@ -26,82 +26,102 @@ const PendingVerification = () => {
       loadPendingDocuments();
       // Clear the flag after refreshing
       localStorage.removeItem('refresh_history');
-    }
-  }, []);  // Empty dependency array ensures it only runs once on mount
-  // Load pending documents from backend
-  // Update PendingVerification.jsx to load data correctly
-
-// Add to the loadPendingDocuments function
-const loadPendingDocuments = async () => {
-  try {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    const token = AuthService.getToken();
-    
-    if (!token) {
-      throw new Error("Authentication token not found. Please log in again.");
-    }
-    
-    console.log("Fetching pending documents from backend");
-    
-    // Make sure to use the correct endpoint to get ALL documents
-    const response = await axios.get(`${backendUrl}/documents/`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    console.log("Documents response:", response.data);
-    
-    // Filter for pending documents only after getting all documents
-    if (Array.isArray(response.data)) {
-      const pendingDocuments = response.data.filter(doc => doc.status === 'Pending');
-      
-      console.log("Pending documents found:", pendingDocuments.length);
-      
-      // Process the documents to add calculated fields
-      const processedDocs = pendingDocuments.map(doc => ({
-        id: doc.id,
-        clientName: doc.user?.username || 'Unknown Client',
-        clientAddress: doc.user_wallet_address || 'Unknown',
-        documentType: doc.document_type,
-        submittedDate: new Date(doc.upload_date).toLocaleDateString(),
-        priority: calculatePriority(doc.upload_date, doc.document_type),
-        timeInQueue: calculateTimeInQueue(doc.upload_date),
-        documentHash: doc.ipfs_hash,
-        fileName: doc.file_name
-      }));
-      
-      setPendingDocuments(processedDocs);
     } else {
-      console.error("Unexpected response format:", response.data);
-      throw new Error("Unexpected response format");
+      // Initial load of pending documents
+      loadPendingDocuments();
     }
+  }, []);
+
+  // Updated loadPendingDocuments function with fixed ID handling
+  const loadPendingDocuments = async () => {
+    setLoading(true);
+    setError(null);
     
-    setLoading(false);
-  } catch (err) {
-    console.error("Error loading pending documents:", err);
-    setError("Failed to load pending documents. Please try again later.");
-    
-    // Fall back to mock data in development
-    if (process.env.NODE_ENV === 'development') {
-      const mockDocs = [
-        {
-          id: 1,
-          clientName: 'John Doe',
-          documentType: 'passport',
-          submittedDate: new Date().toLocaleDateString(),
-          priority: 'high',
-          timeInQueue: '2 hours',
-          documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
-        },
-        // Add more mock data if needed
-      ];
-      setPendingDocuments(mockDocs);
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const token = AuthService.getToken();
+      
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in again.");
+      }
+      
+      console.log("Fetching pending documents from backend");
+      
+      // Make sure to use the correct endpoint to get ALL documents
+      const response = await axios.get(`${backendUrl}/documents/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      console.log("Documents response:", response.data);
+      
+      // Filter for pending documents only after getting all documents
+      if (Array.isArray(response.data)) {
+        // Use case-insensitive comparison for better reliability
+        const pendingDocuments = response.data.filter(doc => {
+          if (!doc || typeof doc !== 'object') return false;
+          
+          // Convert status to string and lowercase for case-insensitive comparison
+          const status = String(doc.status || '').toLowerCase();
+          return status.includes('pend');
+        });
+        
+        console.log("Pending documents found:", pendingDocuments.length);
+        
+        // Process the documents to add calculated fields
+        const processedDocs = pendingDocuments.map(doc => {
+          // Make sure we have valid document IDs
+          const docId = doc.id ? String(doc.id) : null;
+          if (!docId) {
+            console.warn("Document missing ID:", doc);
+            return null; // Will be filtered out later
+          }
+          
+          return {
+            id: docId,  // Ensure ID is converted to string
+            clientName: doc.user?.username || 'Unknown Client',
+            clientAddress: doc.user_wallet_address || 'Unknown',
+            documentType: doc.document_type,
+            submittedDate: new Date(doc.upload_date).toLocaleDateString(),
+            priority: calculatePriority(doc.upload_date, doc.document_type),
+            timeInQueue: calculateTimeInQueue(doc.upload_date),
+            documentHash: doc.ipfs_hash,
+            fileName: doc.file_name
+          };
+        }).filter(doc => doc !== null);  // Filter out documents without IDs
+        
+        setPendingDocuments(processedDocs);
+      } else {
+        console.error("Unexpected response format:", response.data);
+        throw new Error("Unexpected response format");
+      }
+      
+      setLoading(false);
+    } catch (err) {
+      console.error("Error loading pending documents:", err);
+      setError("Failed to load pending documents. Please try again later.");
+      
+      // Fall back to mock data in development
+      if (process.env.NODE_ENV === 'development') {
+        const mockDocs = [
+          {
+            id: "1",  // Use string IDs consistently
+            clientName: 'John Doe',
+            documentType: 'passport',
+            submittedDate: new Date().toLocaleDateString(),
+            priority: 'high',
+            timeInQueue: '2 hours',
+            documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
+          },
+          // More mock data if needed
+        ];
+        setPendingDocuments(mockDocs);
+      }
+      
+      setLoading(false);
     }
-    
-    setLoading(false);
-  }
-};
+  };
   
   // Calculate priority based on time in queue and document type
   const calculatePriority = (uploadDate, documentType) => {
@@ -152,37 +172,36 @@ const loadPendingDocuments = async () => {
     }
   };
 
-  // Handle document review
-  // Fix the handleReviewDocument function in PendingVerification.jsx
-const handleReviewDocument = (docId) => {
-  try {
-    if (typeof docId === 'undefined' || docId === null) {
-      throw new Error(`Invalid document ID: ${docId}`);
+  // Fixed handleReviewDocument function to handle document IDs correctly
+  const handleReviewDocument = (docId) => {
+    try {
+      if (typeof docId === 'undefined' || docId === null) {
+        throw new Error(`Invalid document ID: ${docId}`);
+      }
+      
+      // Log with the actual ID for debugging
+      console.log(`Reviewing document with ID: ${docId}`);
+      
+      // IMPORTANT: Store document ID as string in multiple storage mechanisms for redundancy
+      const docIdString = String(docId);
+      
+      // 1. Store in localStorage
+      localStorage.setItem('current_verification_id', docIdString);
+      
+      // 2. Store in sessionStorage (persists across page refreshes but not tabs)
+      sessionStorage.setItem('current_verification_id', docIdString);
+      
+      // 3. Use URLSearchParams for more reliable passing (doesn't rely on storage)
+      navigate(`/institution/verification/${docIdString}`);
+      
+      // Additional message to confirm ID is being passed
+      toast.success(`Opening document ID: ${docIdString} for verification`);
+      
+    } catch (error) {
+      console.error(error.message);
+      toast.error("Cannot review this document: Invalid document ID");
     }
-    
-    // Log with the actual ID for debugging
-    console.log(`Reviewing document with ID: ${docId}`);
-    
-    // IMPORTANT: Store document ID as string in multiple storage mechanisms for redundancy
-    const docIdString = String(docId);
-    
-    // 1. Store in localStorage
-    localStorage.setItem('current_verification_id', docIdString);
-    
-    // 2. Store in sessionStorage (persists across page refreshes but not tabs)
-    sessionStorage.setItem('current_verification_id', docIdString);
-    
-    // 3. Use URLSearchParams for more reliable passing (doesn't rely on storage)
-    navigate(`/institution/verification/${docIdString}`);
-    
-    // Additional message to confirm ID is being passed
-    toast.success(`Opening document ID: ${docIdString} for verification`);
-    
-  } catch (error) {
-    console.error(error.message);
-    toast.error("Cannot review this document: Invalid document ID");
-  }
-};
+  };
 
   // Filter and search documents
   const filteredDocuments = pendingDocuments.filter(doc => {
