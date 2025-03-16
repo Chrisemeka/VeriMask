@@ -41,84 +41,53 @@ const VerifiedDocument = () => {
         }
       });
       
-      if (response.data) {
+      if (Array.isArray(response.data)) {
         console.log("Documents response for verified docs:", response.data);
         
-        // Log all possible status values to debug
+        // Log all status values to debug
         const statusValues = new Set(response.data.map(doc => 
           doc.status ? String(doc.status).toLowerCase() : 'undefined'
         ));
         console.log("Status values in documents:", Array.from(statusValues));
         
-        // Use more flexible case-insensitive comparison for Verified status
+        // Use case-insensitive comparison for status - check if status contains 'verif'
         const verified = response.data.filter(doc => {
-          // Convert to string in case status is not a string
           const status = doc.status ? String(doc.status).toLowerCase() : '';
-          return status.includes('verif') || status === 'verified';
+          return status.includes('verif');
         });
         
         console.log("Verified documents found:", verified.length);
         
-        // If no documents found with 'verif' in status, try alternate approach
-        if (verified.length === 0) {
-          console.log("Trying alternative status detection...");
-          // Try to identify verified documents by comparing with fixed status values
-          const alternateVerified = response.data.filter(doc => {
-            return doc.status === 'Verified' || 
-                   doc.status === 'VERIFIED' || 
-                   doc.status === true || 
-                   doc.status === 1;
-          });
+        if (verified.length > 0) {
+          // Process verified documents
+          const verifiedDocs = verified.map(doc => ({
+            id: doc.id,
+            clientName: doc.user?.username || 'Unknown Client',
+            documentType: doc.document_type,
+            verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
+            verifiedBy: doc.verified_by?.username || 'Unknown Verifier',
+            ipfsHash: doc.ipfs_hash,
+            submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
+            status: 'Verified'
+          }));
           
-          if (alternateVerified.length > 0) {
-            console.log("Found verified documents with alternative method:", alternateVerified.length);
-            // Process the documents to add calculated fields
-            const verifiedDocs = alternateVerified.map(doc => ({
-              id: doc.id,
-              clientName: doc.user?.username || 'Unknown Client',
-              documentType: doc.document_type,
-              verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
-              verifiedBy: doc.verified_by?.username || 'Unknown Verifier',
-              ipfsHash: doc.ipfs_hash,
-              submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
-              status: 'Verified'
-            }));
-            
-            setVerifiedDocuments(verifiedDocs);
-            return;
-          }
-        }
-        
-        // Process the documents to add calculated fields
-        const verifiedDocs = verified.map(doc => ({
-          id: doc.id,
-          clientName: doc.user?.username || 'Unknown Client',
-          documentType: doc.document_type,
-          verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
-          verifiedBy: doc.verified_by?.username || 'Unknown Verifier',
-          ipfsHash: doc.ipfs_hash,
-          submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
-          status: 'Verified'
-        }));
-        
-        setVerifiedDocuments(verifiedDocs);
-        
-        // If still no verified docs found, use all non-pending docs as fallback
-        if (verifiedDocs.length === 0) {
-          console.log("Using all non-pending documents as fallback...");
+          setVerifiedDocuments(verifiedDocs);
+        } else {
+          // Fallback: consider non-Pending documents as verified
+          console.log("No documents with 'verified' status found, using non-pending as fallback");
           const nonPendingDocs = response.data.filter(doc => {
             const status = doc.status ? String(doc.status).toLowerCase() : '';
-            return !status.includes('pend');
+            return !status.includes('pend') && !status.includes('reject');
           });
           
           if (nonPendingDocs.length > 0) {
-            console.log("Found non-pending documents:", nonPendingDocs.length);
+            console.log("Using non-pending documents as verified:", nonPendingDocs.length);
             const fallbackDocs = nonPendingDocs.map(doc => ({
               id: doc.id,
               clientName: doc.user?.username || 'Unknown Client',
               documentType: doc.document_type,
               verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 
-                               (doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown'),
+                                (doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown'),
               verifiedBy: doc.verified_by?.username || 'System',
               ipfsHash: doc.ipfs_hash,
               submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
@@ -126,6 +95,31 @@ const VerifiedDocument = () => {
             }));
             
             setVerifiedDocuments(fallbackDocs);
+          } else {
+            // If still no docs found, try one last approach - look for status values like "VERIFIED" or "true"
+            console.log("Trying status values like true or 1 for verification");
+            const verifiedByOtherMeans = response.data.filter(doc => 
+              doc.status === true || 
+              doc.status === 1 || 
+              doc.status === "VERIFIED" || 
+              doc.status === "Verified"
+            );
+            
+            if (verifiedByOtherMeans.length > 0) {
+              const lastResortDocs = verifiedByOtherMeans.map(doc => ({
+                id: doc.id,
+                clientName: doc.user?.username || 'Unknown Client',
+                documentType: doc.document_type,
+                verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 
+                                  (doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown'),
+                verifiedBy: doc.verified_by?.username || 'System',
+                ipfsHash: doc.ipfs_hash,
+                submissionDate: doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown',
+                status: 'Verified'
+              }));
+              
+              setVerifiedDocuments(lastResortDocs);
+            }
           }
         }
       } else {
@@ -318,66 +312,88 @@ const VerifiedDocument = () => {
           </div>
         </div>
         <div className="mt-4 sm:mt-0 sm:ml-4 flex space-x-4">
-          <select className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-            <option>Last 7 days</option>
-            <option>Last 30 days</option>
-            <option>Last 3 months</option>
-            <option>All time</option>
+          <select 
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          >
+            <option value="all">All Time</option>
+            <option value="7days">Last 7 days</option>
+            <option value="30days">Last 30 days</option>
+            <option value="3months">Last 3 months</option>
           </select>
-          <button className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-            <Filter className="h-5 w-5 mr-2" />
-            Filter
-          </button>
         </div>
       </div>
 
+      {/* Empty state */}
+      {filteredDocuments.length === 0 && (
+        <div className="mt-8 bg-white px-4 py-10 shadow sm:rounded-lg text-center">
+          <p className="text-gray-500">No verified documents found matching your criteria.</p>
+          <button
+            onClick={handleRefresh}
+            className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </button>
+        </div>
+      )}
+
       {/* Documents Table */}
-      <div className="mt-8 flex flex-col">
-        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table className="min-w-full divide-y divide-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">Client</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Verification Date</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Verified By</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {verifiedDocuments.map((doc) => (
-                    <tr key={doc.id}>
-                      <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">{doc.clientName}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.verificationDate}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.verifiedBy}</td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          <CheckCircle className="h-4 w-4 mr-1" />
-                          Verified
-                        </span>
-                      </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <div className="flex justify-end space-x-3">
-                          <button className="text-blue-600 hover:text-blue-900">
-                            <Eye className="h-5 w-5" />
-                          </button>
-                          <button className="text-gray-600 hover:text-gray-900">
-                            <Download className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
+      {filteredDocuments.length > 0 && (
+        <div className="mt-8 flex flex-col">
+          <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table className="min-w-full divide-y divide-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">Client</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Verification Date</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Verified By</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+                      <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {filteredDocuments.map((doc) => (
+                      <tr key={doc.id}>
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">{doc.clientName}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.verificationDate}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.verifiedBy}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Verified
+                          </span>
+                        </td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                          <div className="flex justify-end space-x-3">
+                            <button 
+                              onClick={() => handleViewDetails(doc.id)}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
+                              <Eye className="h-5 w-5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDownload(doc.ipfsHash, doc.clientName, doc.documentType)}
+                              className="text-gray-600 hover:text-gray-900"
+                            >
+                              <Download className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -92,64 +92,48 @@ const VerificationHistory = () => {
         ));
         console.log("Status values in documents:", Array.from(statusValues));
         
-        // Filter for verified or rejected documents with case-insensitive comparison
+        // Filter for any document that isn't pending using case-insensitive comparison
         const completedDocuments = response.data.filter(doc => {
           if (!doc || typeof doc !== 'object') return false;
           
           const status = doc.status ? String(doc.status).toLowerCase() : '';
           
-          // Check for any status containing 'verif' or 'reject' substrings
-          return status.includes('verif') || status.includes('reject');
+          // Include any document that isn't pending
+          return !status.includes('pend');
         });
         
-        console.log("Verified/rejected documents found:", completedDocuments.length);
+        console.log("Completed documents found:", completedDocuments.length);
         
-        // If no documents found with standard filter, use all non-pending as fallback
-        let historyItems = [];
-        
-        if (completedDocuments.length === 0) {
-          console.log("Using alternative status detection for verification history...");
-          // Use all non-pending documents as completed documents
-          const nonPendingDocs = response.data.filter(doc => {
-            const status = doc.status ? String(doc.status).toLowerCase() : '';
-            return !status.includes('pend');
-          });
+        // Process the documents to add calculated fields
+        const historyItems = completedDocuments.map(doc => {
+          // Determine status by looking for keywords in the status
+          const statusText = doc.status ? String(doc.status).toLowerCase() : '';
+          let status = 'unknown';
           
-          if (nonPendingDocs.length > 0) {
-            console.log("Found non-pending documents for history:", nonPendingDocs.length);
-            
-            // Process the documents to add calculated fields
-            historyItems = nonPendingDocs.map(doc => ({
-              id: doc.id,
-              clientName: doc.user?.username || (doc.user ? `User ${doc.user}` : 'Unknown Client'),
-              documentType: doc.document_type,
-              verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 
-                              (doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown'),
-              verifiedBy: doc.verified_by?.username || 'System',
-              // Assume all non-pending are approved
-              status: 'approved',
-              notes: doc.notes || '',
-              documentId: doc.id,
-              timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
-              documentHash: doc.ipfs_hash
-            }));
+          if (statusText.includes('verif')) {
+            status = 'approved';
+          } else if (statusText.includes('reject')) {
+            status = 'rejected';
+          } else if (!statusText.includes('pend')) {
+            // If not pending and not explicitly verified/rejected,
+            // we'll treat it as approved
+            status = 'approved';
           }
-        } else {
-          // Process the regular completed documents
-          historyItems = completedDocuments.map(doc => ({
+          
+          return {
             id: doc.id,
             clientName: doc.user?.username || (doc.user ? `User ${doc.user}` : 'Unknown Client'),
             documentType: doc.document_type,
-            verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 'Unknown',
-            verifiedBy: doc.verified_by?.username || 'Current User',
-            // Determine status based on case-insensitive includes
-            status: String(doc.status || '').toLowerCase().includes('verif') ? 'approved' : 'rejected',
+            verificationDate: doc.verification_date ? new Date(doc.verification_date).toLocaleDateString() : 
+                            (doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'Unknown'),
+            verifiedBy: doc.verified_by?.username || 'System',
+            status: status,
             notes: doc.notes || '',
             documentId: doc.id,
             timeElapsed: calculateTimeElapsed(doc.verification_date || doc.upload_date),
             documentHash: doc.ipfs_hash
-          }));
-        }
+          };
+        });
         
         setVerificationHistory(historyItems);
       } else {
