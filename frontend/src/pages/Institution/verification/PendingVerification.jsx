@@ -32,7 +32,6 @@ const PendingVerification = () => {
     }
   }, []);
 
-  // Updated loadPendingDocuments function with fixed ID handling
   const loadPendingDocuments = async () => {
     setLoading(true);
     setError(null);
@@ -47,7 +46,7 @@ const PendingVerification = () => {
       
       console.log("Fetching pending documents from backend");
       
-      // Make sure to use the correct endpoint to get ALL documents
+      // Get all documents
       const response = await axios.get(`${backendUrl}/documents/`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -56,9 +55,8 @@ const PendingVerification = () => {
       
       console.log("Documents response:", response.data);
       
-      // Filter for pending documents only after getting all documents
       if (Array.isArray(response.data)) {
-        // Use case-insensitive comparison for better reliability
+        // Filter for pending documents with case-insensitive comparison
         const pendingDocuments = response.data.filter(doc => {
           if (!doc || typeof doc !== 'object') return false;
           
@@ -71,17 +69,10 @@ const PendingVerification = () => {
         
         // Process the documents to add calculated fields
         const processedDocs = pendingDocuments.map(doc => {
-          // Make sure we have valid document IDs
-          const docId = doc.id ? String(doc.id) : null;
-          if (!docId) {
-            console.warn("Document missing ID:", doc);
-            return null; // Will be filtered out later
-          }
-          
           return {
-            id: docId,  // Ensure ID is converted to string
+            id: doc.id,
             clientName: doc.user?.username || 'Unknown Client',
-            clientAddress: doc.user_wallet_address || 'Unknown',
+            clientAddress: doc.user?.profile?.wallet_address || 'Unknown',
             documentType: doc.document_type,
             submittedDate: new Date(doc.upload_date).toLocaleDateString(),
             priority: calculatePriority(doc.upload_date, doc.document_type),
@@ -89,11 +80,10 @@ const PendingVerification = () => {
             documentHash: doc.ipfs_hash,
             fileName: doc.file_name
           };
-        }).filter(doc => doc !== null);  // Filter out documents without IDs
+        });
         
         setPendingDocuments(processedDocs);
       } else {
-        console.error("Unexpected response format:", response.data);
         throw new Error("Unexpected response format");
       }
       
@@ -106,7 +96,7 @@ const PendingVerification = () => {
       if (process.env.NODE_ENV === 'development') {
         const mockDocs = [
           {
-            id: "1",  // Use string IDs consistently
+            id: 1,
             clientName: 'John Doe',
             documentType: 'passport',
             submittedDate: new Date().toLocaleDateString(),
@@ -114,7 +104,24 @@ const PendingVerification = () => {
             timeInQueue: '2 hours',
             documentHash: 'QmXb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDXXX'
           },
-          // More mock data if needed
+          {
+            id: 2,
+            clientName: 'Jane Smith',
+            documentType: 'drivers_license',
+            submittedDate: new Date(Date.now() - 86400000).toLocaleDateString(),
+            priority: 'medium',
+            timeInQueue: '1 day',
+            documentHash: 'QmYb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDYYY'
+          },
+          {
+            id: 3,
+            clientName: 'Mike Johnson',
+            documentType: 'bank_statement',
+            submittedDate: new Date(Date.now() - 172800000).toLocaleDateString(),
+            priority: 'low',
+            timeInQueue: '2 days',
+            documentHash: 'QmZb5M6qCMKRRKqjARKb5XBgtaDfbvCt7uCYgECgVJDZZZ'
+          }
         ];
         setPendingDocuments(mockDocs);
       }
@@ -172,7 +179,6 @@ const PendingVerification = () => {
     }
   };
 
-  // Fixed handleReviewDocument function to handle document IDs correctly
   const handleReviewDocument = (docId) => {
     try {
       if (typeof docId === 'undefined' || docId === null) {
@@ -203,7 +209,7 @@ const PendingVerification = () => {
     }
   };
 
-  // Filter and search documents
+  // Filter documents
   const filteredDocuments = pendingDocuments.filter(doc => {
     // Apply search filter
     const matchesSearch = searchTerm === '' ||
@@ -369,53 +375,44 @@ const PendingVerification = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {filteredDocuments.map((doc, index) => {
-                      // Generate a unique key for each row
-                      const rowKey = doc.id !== undefined && doc.id !== null 
-                        ? `id-${doc.id}` 
-                        : `doc-${index}-${Date.now()}`;
-                      
-                      // Format client address for display
-                      const clientAddress = doc.clientAddress || 'Unknown';
-                      const shortenedAddress = clientAddress === 'Unknown' 
-                        ? 'Unknown' 
-                        : `${clientAddress.substring(0, 8)}...${clientAddress.substring(Math.max(0, clientAddress.length - 6))}`;
-                      
-                      return (
-                        <tr key={rowKey}>
-                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm">
-                            <div className="flex flex-col">
-                              <span className="font-medium text-gray-900">{doc.clientName}</span>
-                              <span className="text-gray-500 text-xs font-mono">{shortenedAddress}</span>
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {doc.documentType ? doc.documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown Type'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.submittedDate || 'Unknown'}</td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm">
-                            <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getPriorityBadgeColor(doc.priority)}`}>
-                              {doc.priority}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            <div className="flex items-center">
-                              <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                              {doc.timeInQueue}
-                            </div>
-                          </td>
-                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            <button
-                              onClick={() => handleReviewDocument(doc.id)}
-                              className="text-blue-600 hover:text-blue-900 flex items-center justify-end"
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              Review
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {filteredDocuments.map((doc) => (
+                      <tr key={doc.id}>
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-gray-900">{doc.clientName}</span>
+                            {doc.clientAddress && (
+                              <span className="text-gray-500 text-xs font-mono">
+                                {doc.clientAddress.substring(0, 8)}...{doc.clientAddress.substring(Math.max(0, doc.clientAddress.length - 6))}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {doc.documentType ? doc.documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown Type'}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{doc.submittedDate || 'Unknown'}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getPriorityBadgeColor(doc.priority)}`}>
+                            {doc.priority}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
+                            {doc.timeInQueue}
+                          </div>
+                        </td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                          <button
+                            onClick={() => handleReviewDocument(doc.id)}
+                            className="text-blue-600 hover:text-blue-900 flex items-center justify-end"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
